@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Planning Août 2026 - Widget Grist</title>
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+<style>
+  :root {
+    --header-bg: #2c3e50;
+    --header-color: #ffffff;
+    --week-bg: #34495e;
+    --fixed-bg: #1a252f;
+    --border-color: #ddd;
+    --cell-hover: #f5f7fa;
+  }
+
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    margin: 0;
+    padding: 12px;
+    background: #fafafa;
+  }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    background: white;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  }
+
+  th, td {
+    border: 1px solid var(--border-color);
+    padding: 6px 8px;
+    text-align: left;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  th.week-header {
+    background: var(--week-bg);
+    color: var(--header-color);
+    text-align: center;
+    font-weight: 600;
+    font-size: 13px;
+  }
+
+  th.day-header {
+    background: var(--header-bg);
+    color: var(--header-color);
+    text-align: center;
+    font-size: 11px;
+  }
+
+  th.fixed-header {
+    background: var(--fixed-bg);
+    color: var(--header-color);
+  }
+
+  td.editable {
+    cursor: text;
+    min-width: 70px;
+    white-space: pre-wrap;
+  }
+
+  td.editable:hover {
+    background: var(--cell-hover);
+  }
+
+  td.editable[contenteditable="true"] {
+    outline: 2px solid #3498db;
+    background: #fffde7;
+  }
+
+  #status {
+    font-size: 12px;
+    color: #888;
+    margin-bottom: 8px;
+  }
+
+  #empty-msg {
+    padding: 20px;
+    text-align: center;
+    color: #888;
+  }
+
+  .scroll-wrap {
+    overflow-x: auto;
+  }
+</style>
+</head>
+<body>
+
+<div id="status">Chargement…</div>
+<div class="scroll-wrap">
+  <div id="app"></div>
+</div>
+
+<script>
+// ============================================================
+// CONFIGURATION - basé sur ta structure : 64 colonnes au total
+// 2 colonnes fixes + 62 colonnes réparties sur 6 semaines (août 2026)
+// ============================================================
+
+// Nombre de colonnes fixes en début de tableau (ex: Employé, Poste...)
+// et leurs libellés d'affichage (à adapter si besoin)
+const FIXED_COLS_COUNT = 2;
+const FIXED_COL_LABELS = ["Employé", "Colonne 2"];
+
+// Découpage des semaines : combien de colonnes appartiennent à chaque semaine,
+// dans l'ordre où elles apparaissent dans la table.
+const WEEK_GROUPS = [
+  { label: "Semaine 31", count: 4 },
+  { label: "Semaine 32", count: 14 },
+  { label: "Semaine 33", count: 14 },
+  { label: "Semaine 34", count: 14 },
+  { label: "Semaine 35", count: 14 },
+  { label: "Semaine 36", count: 2 },
+];
+
+// ============================================================
+// LOGIQUE DU WIDGET - normalement pas besoin d'y toucher
+// ============================================================
+
+grist.ready({
+  requiredAccess: "full",
+});
+
+grist.onRecords((records) => {
+  render(records);
+});
+
+function render(records) {
+  const statusEl = document.getElementById("status");
+  const appEl = document.getElementById("app");
+
+  if (!records || records.length === 0) {
+    appEl.innerHTML = '<div id="empty-msg">Aucune donnée à afficher.</div>';
+    statusEl.textContent = "";
+    return;
+  }
+
+  // Ordre des colonnes tel que reçu de Grist pour le 1er enregistrement
+  const allKeys = Object.keys(records[0]).filter((k) => k !== "id");
+
+  const expectedTotal = FIXED_COLS_COUNT + WEEK_GROUPS.reduce((a, w) => a + w.count, 0);
+  if (allKeys.length !== expectedTotal) {
+    appEl.innerHTML =
+      `<div id="empty-msg">⚠️ Attendu ${expectedTotal} colonnes (config), ` +
+      `mais ${allKeys.length} colonnes reçues de Grist. Vérifie FIXED_COLS_COUNT ` +
+      `et WEEK_GROUPS dans le code, ou l'ordre des colonnes dans la vue.</div>`;
+    statusEl.textContent = "";
+    return;
+  }
+
+  const fixedKeys = allKeys.slice(0, FIXED_COLS_COUNT);
+  let cursor = FIXED_COLS_COUNT;
+  const weekKeyGroups = WEEK_GROUPS.map((w) => {
+    const keys = allKeys.slice(cursor, cursor + w.count);
+    cursor += w.count;
+    return { label: w.label, keys };
+  });
+
+  // ---- Construction du tableau HTML ----
+  let html = "<table><thead><tr>";
+
+  // Colonnes fixes (fusionnées verticalement sur les 2 lignes d'en-tête)
+  fixedKeys.forEach((key, i) => {
+    const label = FIXED_COL_LABELS[i] || key;
+    html += `<th class="fixed-header" rowspan="2">${escapeHtml(label)}</th>`;
+  });
+
+  // Ligne 1 : en-têtes de semaine fusionnés
+  weekKeyGroups.forEach((group) => {
+    html += `<th class="week-header" colspan="${group.keys.length}">${escapeHtml(group.label)}</th>`;
+  });
+  html += "</tr><tr>";
+
+  // Ligne 2 : sous-en-têtes (nom réel de la colonne Grist, ex: date ou tâche)
+  weekKeyGroups.forEach((group) => {
+    group.keys.forEach((key) => {
+      html += `<th class="day-header">${escapeHtml(key)}</th>`;
+    });
+  });
+  html += "</tr></thead><tbody>";
+
+  // Lignes de données
+  records.forEach((record) => {
+    html += "<tr>";
+    fixedKeys.forEach((key) => {
+      html += `<td class="editable" data-row-id="${record.id}" data-col="${key}">${escapeHtml(record[key] ?? "")}</td>`;
+    });
+    weekKeyGroups.forEach((group) => {
+      group.keys.forEach((key) => {
+        const value = record[key] ?? "";
+        html += `<td class="editable" data-row-id="${record.id}" data-col="${key}">${escapeHtml(value)}</td>`;
+      });
+    });
+    html += "</tr>";
+  });
+
+  html += "</tbody></table>";
+  appEl.innerHTML = html;
+  statusEl.textContent = `${records.length} ligne(s) • ${WEEK_GROUPS.length} semaines affichées (${allKeys.length} colonnes)`;
+
+  attachEditHandlers();
+}
+
+function attachEditHandlers() {
+  document.querySelectorAll("td.editable").forEach((cell) => {
+    cell.addEventListener("click", function onClick() {
+      if (cell.getAttribute("contenteditable") === "true") return;
+      cell.setAttribute("contenteditable", "true");
+      cell.focus();
+      placeCaretAtEnd(cell);
+    });
+
+    cell.addEventListener("blur", async function onBlur() {
+      cell.removeAttribute("contenteditable");
+      const rowId = Number(cell.dataset.rowId);
+      const colId = cell.dataset.col;
+      const newValue = cell.textContent;
+      await saveValue(rowId, colId, newValue);
+    });
+
+    cell.addEventListener("keydown", function onKeydown(e) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        cell.blur();
+      }
+      if (e.key === "Escape") {
+        cell.blur();
+      }
+    });
+  });
+}
+
+async function saveValue(rowId, colId, value) {
+  try {
+    await grist.selectedTable.update({
+      id: rowId,
+      fields: { [colId]: value },
+    });
+  } catch (err) {
+    console.error("Erreur d'écriture Grist:", err);
+    document.getElementById("status").textContent =
+      "Erreur lors de l'enregistrement — vérifie les droits d'accès du widget.";
+  }
+}
+
+function placeCaretAtEnd(el) {
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  range.collapse(false);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+</script>
+</body>
+</html>
