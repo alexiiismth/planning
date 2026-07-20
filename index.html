@@ -292,8 +292,17 @@ function render(records, mappings) {
     return { label: w.label, keys, weekIndex: idx };
   });
 
-  // ---- Construction du tableau HTML (une seule ligne d'en-tête désormais) ----
-  let html = "<table><thead><tr>";
+  // ---- Construction du tableau HTML (colgroup pour forcer la largeur des colonnes) ----
+  let html = "<table><colgroup>";
+  fixedKeys.forEach(() => {
+    html += `<col style="width:var(--cell-width);">`;
+  });
+  weekKeyGroups.forEach((group) => {
+    group.keys.forEach(() => {
+      html += `<col class="wk-${group.weekIndex}" style="width:var(--cell-width);">`;
+    });
+  });
+  html += "</colgroup><thead><tr>";
 
   fixedKeys.forEach((key, i) => {
     const label = FIXED_COL_LABELS[i] || key;
