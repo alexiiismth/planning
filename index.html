@@ -132,6 +132,12 @@
   .size-controls input[type="range"] {
     width: 120px;
   }
+  .size-controls .value-display {
+    font-weight: 600;
+    min-width: 42px;
+    display: inline-block;
+    text-align: right;
+  }
 </style>
 </head>
 <body>
@@ -140,12 +146,15 @@
 <div class="size-controls">
   <label>Largeur des cases :
     <input type="range" id="widthSlider" min="60" max="260" value="110">
+    <span class="value-display" id="widthValue">110px</span>
   </label>
   <label>Hauteur min. des cases :
     <input type="range" id="heightSlider" min="24" max="120" value="40">
+    <span class="value-display" id="heightValue">40px</span>
   </label>
   <label>Taille du texte :
     <input type="range" id="fontSlider" min="10" max="20" value="13">
+    <span class="value-display" id="fontValue">13px</span>
   </label>
 </div>
 <div class="scroll-wrap">
@@ -155,12 +164,15 @@
 <script>
 document.getElementById("widthSlider").addEventListener("input", (e) => {
   document.documentElement.style.setProperty("--cell-width", e.target.value + "px");
+  document.getElementById("widthValue").textContent = e.target.value + "px";
 });
 document.getElementById("heightSlider").addEventListener("input", (e) => {
   document.documentElement.style.setProperty("--cell-min-height", e.target.value + "px");
+  document.getElementById("heightValue").textContent = e.target.value + "px";
 });
 document.getElementById("fontSlider").addEventListener("input", (e) => {
   document.documentElement.style.setProperty("--cell-font-size", e.target.value + "px");
+  document.getElementById("fontValue").textContent = e.target.value + "px";
 });
 </script>
 
