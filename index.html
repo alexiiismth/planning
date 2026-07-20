@@ -13,11 +13,13 @@
     --border-color: #ddd;
     --cell-hover: #f5f7fa;
 
-    /* ==== Taille des cases : modifiable ici en dur, OU via les curseurs
-       affichés en haut du widget (les curseurs prennent le dessus une fois touchés) ==== */
-    --cell-width: 110px;      /* largeur d'une case */
-    --cell-min-height: 40px;  /* hauteur minimum d'une case */
-    --cell-font-size: 13px;   /* taille du texte dans les cases */
+    /* ==== Tailles par colonne : modifiable ici en dur, OU via les curseurs
+       affichés en haut du widget ==== */
+    --col1-width: 92px;   /* colonne 1 (noms) */
+    --col2-width: 186px;  /* colonne 2 */
+    --day-width: 111px;   /* toutes les colonnes de dates/tâches */
+    --cell-min-height: 70px;
+    --cell-font-size: 13px;
   }
 
   body {
@@ -64,9 +66,6 @@
 
   td.editable {
     cursor: text;
-    width: var(--cell-width);
-    min-width: var(--cell-width);
-    max-width: var(--cell-width);
     min-height: var(--cell-min-height);
     font-size: var(--cell-font-size);
     white-space: pre-wrap;
@@ -112,9 +111,11 @@
   .scroll-wrap {
     overflow-x: auto;
   }
+
   .size-controls {
     display: flex;
-    gap: 20px;
+    flex-wrap: wrap;
+    gap: 16px;
     align-items: center;
     margin-bottom: 10px;
     padding: 8px 12px;
@@ -130,8 +131,9 @@
   }
 
   .size-controls input[type="range"] {
-    width: 120px;
+    width: 110px;
   }
+
   .size-controls .value-display {
     font-weight: 600;
     min-width: 42px;
@@ -144,13 +146,21 @@
 
 <div id="status">Chargement…</div>
 <div class="size-controls">
-  <label>Largeur des cases :
-    <input type="range" id="widthSlider" min="60" max="260" value="110">
-    <span class="value-display" id="widthValue">110px</span>
+  <label>Largeur col. 1 :
+    <input type="range" id="col1Slider" min="40" max="300" value="92">
+    <span class="value-display" id="col1Value">92px</span>
+  </label>
+  <label>Largeur col. 2 :
+    <input type="range" id="col2Slider" min="40" max="400" value="186">
+    <span class="value-display" id="col2Value">186px</span>
+  </label>
+  <label>Largeur autres colonnes :
+    <input type="range" id="dayWidthSlider" min="40" max="300" value="111">
+    <span class="value-display" id="dayWidthValue">111px</span>
   </label>
   <label>Hauteur min. des cases :
-    <input type="range" id="heightSlider" min="24" max="120" value="40">
-    <span class="value-display" id="heightValue">40px</span>
+    <input type="range" id="heightSlider" min="24" max="150" value="70">
+    <span class="value-display" id="heightValue">70px</span>
   </label>
   <label>Taille du texte :
     <input type="range" id="fontSlider" min="10" max="20" value="13">
@@ -162,18 +172,19 @@
 </div>
 
 <script>
-document.getElementById("widthSlider").addEventListener("input", (e) => {
-  document.documentElement.style.setProperty("--cell-width", e.target.value + "px");
-  document.getElementById("widthValue").textContent = e.target.value + "px";
-});
-document.getElementById("heightSlider").addEventListener("input", (e) => {
-  document.documentElement.style.setProperty("--cell-min-height", e.target.value + "px");
-  document.getElementById("heightValue").textContent = e.target.value + "px";
-});
-document.getElementById("fontSlider").addEventListener("input", (e) => {
-  document.documentElement.style.setProperty("--cell-font-size", e.target.value + "px");
-  document.getElementById("fontValue").textContent = e.target.value + "px";
-});
+function bindSlider(sliderId, valueId, cssVar) {
+  const slider = document.getElementById(sliderId);
+  const valueEl = document.getElementById(valueId);
+  slider.addEventListener("input", (e) => {
+    document.documentElement.style.setProperty(cssVar, e.target.value + "px");
+    valueEl.textContent = e.target.value + "px";
+  });
+}
+bindSlider("col1Slider", "col1Value", "--col1-width");
+bindSlider("col2Slider", "col2Value", "--col2-width");
+bindSlider("dayWidthSlider", "dayWidthValue", "--day-width");
+bindSlider("heightSlider", "heightValue", "--cell-min-height");
+bindSlider("fontSlider", "fontValue", "--cell-font-size");
 </script>
 
 <script>
@@ -181,12 +192,8 @@ document.getElementById("fontSlider").addEventListener("input", (e) => {
 // CONFIGURATION
 // ============================================================
 
-// Libellés d'affichage pour tes colonnes fixes (dans l'ordre où tu les
-// assigneras dans le panneau Grist "Colonnes requises").
 const FIXED_COL_LABELS = ["Employé", "Colonne 2"];
 
-// Découpage des semaines : combien de colonnes appartiennent à chaque semaine,
-// dans l'ordre où elles apparaissent dans la table.
 const WEEK_GROUPS = [
   { label: "Semaine 31", count: 4 },
   { label: "Semaine 32", count: 14 },
@@ -196,8 +203,6 @@ const WEEK_GROUPS = [
   { label: "Semaine 36", count: 2 },
 ];
 
-// Couleur associée à chaque choix des colonnes "Choix multiples".
-// text: couleur du texte, bg: couleur de fond, border: optionnel pour les couleurs claires.
 const CHOICE_COLORS = {
   "Absence":     { bg: "#e74c3c", text: "#ffffff" },
   "Chantiers":   { bg: "#87ceeb", text: "#003049" },
@@ -210,7 +215,6 @@ const CHOICE_COLORS = {
   "Grève":       { bg: "#ffffff", text: "#333333", border: "1px solid #999" },
 };
 
-// Mot déclencheur pour le surlignage violet de la colonne 1
 const MATERIEL_KEYWORD = "Matériels";
 
 // ============================================================
@@ -239,14 +243,12 @@ grist.onRecords((records, mappings) => {
   render(records, mappings);
 });
 
-// Garde en mémoire la valeur brute d'origine de chaque cellule
 const cellOriginalValues = {};
 
 function isGristList(value) {
   return Array.isArray(value) && value[0] === "L";
 }
 
-// Rendu HTML des "puces" colorées pour une colonne Choix multiples
 function renderChips(items) {
   if (!items || items.length === 0) return "";
   return items
@@ -260,7 +262,6 @@ function renderChips(items) {
     .join("");
 }
 
-// Texte brut (édition) pour une colonne Choix multiples : items séparés par virgules
 function rawTextForList(items) {
   return (items || []).join(", ");
 }
@@ -304,14 +305,15 @@ function render(records, mappings) {
     return { label: w.label, keys, weekIndex: idx };
   });
 
-  // ---- Construction du tableau HTML (colgroup pour forcer la largeur des colonnes) ----
+  // ---- colgroup : largeur par colonne (col1 / col2 / colonnes jour) ----
   let html = "<table><colgroup>";
-  fixedKeys.forEach(() => {
-    html += `<col style="width:var(--cell-width);">`;
+  fixedKeys.forEach((key, i) => {
+    const widthVar = i === 0 ? "var(--col1-width)" : "var(--col2-width)";
+    html += `<col style="width:${widthVar};">`;
   });
   weekKeyGroups.forEach((group) => {
     group.keys.forEach(() => {
-      html += `<col class="wk-${group.weekIndex}" style="width:var(--cell-width);">`;
+      html += `<col class="wk-${group.weekIndex}" style="width:var(--day-width);">`;
     });
   });
   html += "</colgroup><thead><tr>";
@@ -366,14 +368,20 @@ function render(records, mappings) {
   attachWeekToggleHandlers();
 }
 
+// IMPORTANT : pour masquer une colonne HTML de façon fiable (sans décaler
+// les autres colonnes), il faut utiliser "visibility: collapse" sur le <col>
+// correspondant — pas "display: none", qui peut casser l'alignement des
+// colonnes suivantes dans certains navigateurs. On agit donc uniquement
+// sur les <col>, jamais sur les <td>/<th> individuellement.
 function attachWeekToggleHandlers() {
   document.querySelectorAll("th.week-header").forEach((th) => {
     th.addEventListener("click", () => {
       const idx = th.dataset.weekIndex;
-      const cells = document.querySelectorAll(`.wk-${idx}`);
-      const currentlyHidden = cells.length > 0 && cells[0].style.display === "none";
-      cells.forEach((c) => {
-        c.style.display = currentlyHidden ? "" : "none";
+      const cols = document.querySelectorAll(`col.wk-${idx}`);
+      if (cols.length === 0) return;
+      const currentlyHidden = cols[0].style.visibility === "collapse";
+      cols.forEach((c) => {
+        c.style.visibility = currentlyHidden ? "" : "collapse";
       });
       th.style.opacity = currentlyHidden ? "1" : "0.5";
     });
@@ -439,14 +447,8 @@ async function saveValue(rowId, colId, newText, cellEl) {
 
     cellOriginalValues[`${rowId}_${colId}`] = valueToSend;
 
-    // Re-affiche en mode "puces colorées" si c'est une liste
     if (isList && cellEl) {
       cellEl.innerHTML = renderChips(valueToSend.slice(1));
-    }
-
-    // Réapplique le surlignage violet si c'est la 1ère colonne fixe
-    if (cellEl && cellEl.classList.contains("materiel-highlight-check")) {
-      // (géré directement au prochain rendu complet)
     }
   } catch (err) {
     console.error("Erreur d'écriture Grist:", err);
