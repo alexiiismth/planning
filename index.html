@@ -26,6 +26,7 @@
     width: 100%;
     background: white;
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    table-layout: fixed;
   }
 
   th, td {
@@ -33,7 +34,7 @@
     padding: 6px 8px;
     text-align: left;
     font-size: 12px;
-    white-space: nowrap;
+    vertical-align: top;
   }
 
   th.week-header {
@@ -42,13 +43,12 @@
     text-align: center;
     font-weight: 600;
     font-size: 13px;
+    cursor: pointer;
+    user-select: none;
   }
 
-  th.day-header {
-    background: var(--header-bg);
-    color: var(--header-color);
-    text-align: center;
-    font-size: 11px;
+  th.week-header:hover {
+    background: #46607a;
   }
 
   th.fixed-header {
@@ -59,7 +59,10 @@
   td.editable {
     cursor: text;
     min-width: 70px;
+    max-width: 160px;
     white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: break-word;
   }
 
   td.editable:hover {
@@ -69,6 +72,20 @@
   td.editable[contenteditable="true"] {
     outline: 2px solid #3498db;
     background: #fffde7;
+    white-space: pre-wrap;
+  }
+
+  td.materiel-highlight {
+    background: #d8b4fe !important;
+  }
+
+  .chip {
+    display: inline-block;
+    padding: 1px 6px;
+    margin: 1px 3px 1px 0;
+    border-radius: 4px;
+    font-size: 11px;
+    line-height: 1.5;
   }
 
   #status {
@@ -97,12 +114,11 @@
 
 <script>
 // ============================================================
-// CONFIGURATION - basé sur ta structure : 64 colonnes au total
-// 2 colonnes fixes + 62 colonnes réparties sur 6 semaines (août 2026)
+// CONFIGURATION
 // ============================================================
 
-// Libellés d'affichage pour tes colonnes fixes (dans l'ordre où tu les assigneras
-// dans le panneau Grist). Adapte si besoin.
+// Libellés d'affichage pour tes colonnes fixes (dans l'ordre où tu les
+// assigneras dans le panneau Grist "Colonnes requises").
 const FIXED_COL_LABELS = ["Employé", "Colonne 2"];
 
 // Découpage des semaines : combien de colonnes appartiennent à chaque semaine,
@@ -116,14 +132,27 @@ const WEEK_GROUPS = [
   { label: "Semaine 36", count: 2 },
 ];
 
+// Couleur associée à chaque choix des colonnes "Choix multiples".
+// text: couleur du texte, bg: couleur de fond, border: optionnel pour les couleurs claires.
+const CHOICE_COLORS = {
+  "Absence":     { bg: "#e74c3c", text: "#ffffff" },
+  "Chantiers":   { bg: "#87ceeb", text: "#003049" },
+  "Rapport":     { bg: "#2ecc71", text: "#053a1e" },
+  "Réunion":     { bg: "#4a4a4a", text: "#ffffff" },
+  "Administratif": { bg: "#e0e0e0", text: "#333333" },
+  "Essai labo":  { bg: "#f1c40f", text: "#4a3b00" },
+  "Recherche":   { bg: "#1a3a6e", text: "#ffffff" },
+  "Formation":   { bg: "#ffc0cb", text: "#5c0011" },
+  "Grève":       { bg: "#ffffff", text: "#333333", border: "1px solid #999" },
+};
+
+// Mot déclencheur pour le surlignage violet de la colonne 1
+const MATERIEL_KEYWORD = "Matériels";
+
 // ============================================================
-// LOGIQUE DU WIDGET - normalement pas besoin d'y toucher
+// LOGIQUE DU WIDGET
 // ============================================================
 
-// On déclare deux "emplacements" de colonnes que tu vas toi-même assigner
-// dans le panneau latéral de Grist (Creator Panel), dans l'ordre exact de ton tableau.
-// C'est cette étape manuelle qui garantit que l'ordre affiché sera le bon,
-// contrairement à avant où on devinait l'ordre automatiquement.
 grist.ready({
   requiredAccess: "full",
   columns: [
@@ -142,30 +171,34 @@ grist.ready({
   ],
 });
 
-let lastMappings = null;
-
 grist.onRecords((records, mappings) => {
-  lastMappings = mappings;
   render(records, mappings);
 });
 
-// Garde en mémoire la valeur brute d'origine de chaque cellule (avant affichage en texte)
-// pour savoir, au moment de la sauvegarde, si c'était une liste (Choice List / Reference List)
-// ou une valeur simple (Texte, Nombre...).
+// Garde en mémoire la valeur brute d'origine de chaque cellule
 const cellOriginalValues = {};
 
-// Grist encode les colonnes "Choix multiples" et "Référence multiple" sous la forme
-// d'un tableau JS dont le 1er élément est la chaîne spéciale "L", ex: ["L", "Lundi", "Mardi"]
 function isGristList(value) {
   return Array.isArray(value) && value[0] === "L";
 }
 
-// Formate une valeur brute Grist en texte affichable dans la cellule
-function formatCellValue(value) {
-  if (isGristList(value)) {
-    return value.slice(1).join(", ");
-  }
-  return value ?? "";
+// Rendu HTML des "puces" colorées pour une colonne Choix multiples
+function renderChips(items) {
+  if (!items || items.length === 0) return "";
+  return items
+    .map((item) => {
+      const color = CHOICE_COLORS[item];
+      const style = color
+        ? `background:${color.bg};color:${color.text};${color.border ? "border:" + color.border + ";" : ""}`
+        : "background:#eee;color:#333;";
+      return `<span class="chip" style="${style}">${escapeHtml(item)}</span>`;
+    })
+    .join("");
+}
+
+// Texte brut (édition) pour une colonne Choix multiples : items séparés par virgules
+function rawTextForList(items) {
+  return (items || []).join(", ");
 }
 
 function render(records, mappings) {
@@ -187,8 +220,6 @@ function render(records, mappings) {
     return;
   }
 
-  // mappings.fixed et mappings.days sont des tableaux de colId, dans l'ordre
-  // où TU les as sélectionnés dans le panneau Grist. C'est cet ordre qui compte.
   const fixedKeys = mappings.fixed;
   const dayKeys = mappings.days;
 
@@ -203,50 +234,54 @@ function render(records, mappings) {
   }
 
   let cursor = 0;
-  const weekKeyGroups = WEEK_GROUPS.map((w) => {
+  const weekKeyGroups = WEEK_GROUPS.map((w, idx) => {
     const keys = dayKeys.slice(cursor, cursor + w.count);
     cursor += w.count;
-    return { label: w.label, keys };
+    return { label: w.label, keys, weekIndex: idx };
   });
 
-  // ---- Construction du tableau HTML ----
+  // ---- Construction du tableau HTML (une seule ligne d'en-tête désormais) ----
   let html = "<table><thead><tr>";
 
-  // Colonnes fixes (fusionnées verticalement sur les 2 lignes d'en-tête)
   fixedKeys.forEach((key, i) => {
     const label = FIXED_COL_LABELS[i] || key;
-    html += `<th class="fixed-header" rowspan="2">${escapeHtml(label)}</th>`;
+    html += `<th class="fixed-header">${escapeHtml(label)}</th>`;
   });
 
-  // Ligne 1 : en-têtes de semaine fusionnés
   weekKeyGroups.forEach((group) => {
-    html += `<th class="week-header" colspan="${group.keys.length}">${escapeHtml(group.label)}</th>`;
-  });
-  html += "</tr><tr>";
-
-  // Ligne 2 : sous-en-têtes (nom réel de la colonne Grist, ex: date ou tâche)
-  weekKeyGroups.forEach((group) => {
-    group.keys.forEach((key) => {
-      html += `<th class="day-header">${escapeHtml(key)}</th>`;
-    });
+    html += `<th class="week-header" colspan="${group.keys.length}" data-week-index="${group.weekIndex}" title="Cliquer pour afficher/masquer">${escapeHtml(group.label)} <span style="font-size:10px;">(masquer/afficher)</span></th>`;
   });
   html += "</tr></thead><tbody>";
 
-  // Lignes de données
   records.forEach((record) => {
     html += "<tr>";
-    fixedKeys.forEach((key) => {
+
+    fixedKeys.forEach((key, i) => {
       const rawValue = record[key];
       cellOriginalValues[`${record.id}_${key}`] = rawValue;
-      html += `<td class="editable" data-row-id="${record.id}" data-col="${key}">${escapeHtml(formatCellValue(rawValue))}</td>`;
+      const isList = isGristList(rawValue);
+      const displayHtml = isList
+        ? renderChips(rawValue.slice(1))
+        : escapeHtml(rawValue ?? "");
+      const isFirstFixedCol = i === 0;
+      const plainText = isList ? "" : String(rawValue ?? "");
+      const highlight =
+        isFirstFixedCol && plainText.includes(MATERIEL_KEYWORD) ? " materiel-highlight" : "";
+      html += `<td class="editable${highlight}" data-row-id="${record.id}" data-col="${key}" data-is-list="${isList}">${displayHtml}</td>`;
     });
+
     weekKeyGroups.forEach((group) => {
       group.keys.forEach((key) => {
         const rawValue = record[key];
         cellOriginalValues[`${record.id}_${key}`] = rawValue;
-        html += `<td class="editable" data-row-id="${record.id}" data-col="${key}">${escapeHtml(formatCellValue(rawValue))}</td>`;
+        const isList = isGristList(rawValue);
+        const displayHtml = isList
+          ? renderChips(rawValue.slice(1))
+          : escapeHtml(rawValue ?? "");
+        html += `<td class="editable wk-${group.weekIndex}" data-row-id="${record.id}" data-col="${key}" data-is-list="${isList}">${displayHtml}</td>`;
       });
     });
+
     html += "</tr>";
   });
 
@@ -255,12 +290,34 @@ function render(records, mappings) {
   statusEl.textContent = `${records.length} ligne(s) • ${WEEK_GROUPS.length} semaines affichées (${fixedKeys.length + dayKeys.length} colonnes)`;
 
   attachEditHandlers();
+  attachWeekToggleHandlers();
+}
+
+function attachWeekToggleHandlers() {
+  document.querySelectorAll("th.week-header").forEach((th) => {
+    th.addEventListener("click", () => {
+      const idx = th.dataset.weekIndex;
+      const cells = document.querySelectorAll(`.wk-${idx}`);
+      const currentlyHidden = cells.length > 0 && cells[0].style.display === "none";
+      cells.forEach((c) => {
+        c.style.display = currentlyHidden ? "" : "none";
+      });
+      th.style.opacity = currentlyHidden ? "1" : "0.5";
+    });
+  });
 }
 
 function attachEditHandlers() {
   document.querySelectorAll("td.editable").forEach((cell) => {
     cell.addEventListener("click", function onClick() {
       if (cell.getAttribute("contenteditable") === "true") return;
+      const isList = cell.dataset.isList === "true";
+      if (isList) {
+        const rowId = cell.dataset.rowId;
+        const colId = cell.dataset.col;
+        const original = cellOriginalValues[`${rowId}_${colId}`];
+        cell.textContent = rawTextForList(isGristList(original) ? original.slice(1) : []);
+      }
       cell.setAttribute("contenteditable", "true");
       cell.focus();
       placeCaretAtEnd(cell);
@@ -271,11 +328,11 @@ function attachEditHandlers() {
       const rowId = Number(cell.dataset.rowId);
       const colId = cell.dataset.col;
       const newValue = cell.textContent;
-      await saveValue(rowId, colId, newValue);
+      await saveValue(rowId, colId, newValue, cell);
     });
 
     cell.addEventListener("keydown", function onKeydown(e) {
-      if (e.key === "Enter") {
+      if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         cell.blur();
       }
@@ -286,14 +343,13 @@ function attachEditHandlers() {
   });
 }
 
-async function saveValue(rowId, colId, newText) {
+async function saveValue(rowId, colId, newText, cellEl) {
   try {
     const originalValue = cellOriginalValues[`${rowId}_${colId}`];
     let valueToSend;
+    let isList = isGristList(originalValue);
 
-    if (isGristList(originalValue)) {
-      // Colonne "Choix multiples" : on reconstruit le format ["L", "choix1", "choix2", ...]
-      // à partir du texte séparé par des virgules tapé par l'utilisateur.
+    if (isList) {
       const items = newText
         .split(",")
         .map((s) => s.trim())
@@ -308,8 +364,17 @@ async function saveValue(rowId, colId, newText) {
       fields: { [colId]: valueToSend },
     });
 
-    // Met à jour le cache local pour que la prochaine édition reparte de la bonne valeur
     cellOriginalValues[`${rowId}_${colId}`] = valueToSend;
+
+    // Re-affiche en mode "puces colorées" si c'est une liste
+    if (isList && cellEl) {
+      cellEl.innerHTML = renderChips(valueToSend.slice(1));
+    }
+
+    // Réapplique le surlignage violet si c'est la 1ère colonne fixe
+    if (cellEl && cellEl.classList.contains("materiel-highlight-check")) {
+      // (géré directement au prochain rendu complet)
+    }
   } catch (err) {
     console.error("Erreur d'écriture Grist:", err);
     document.getElementById("status").textContent =
