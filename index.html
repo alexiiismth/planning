@@ -101,9 +101,8 @@
 // 2 colonnes fixes + 62 colonnes réparties sur 6 semaines (août 2026)
 // ============================================================
 
-// Nombre de colonnes fixes en début de tableau (ex: Employé, Poste...)
-// et leurs libellés d'affichage (à adapter si besoin)
-const FIXED_COLS_COUNT = 2;
+// Libellés d'affichage pour tes colonnes fixes (dans l'ordre où tu les assigneras
+// dans le panneau Grist). Adapte si besoin.
 const FIXED_COL_LABELS = ["Employé", "Colonne 2"];
 
 // Découpage des semaines : combien de colonnes appartiennent à chaque semaine,
@@ -121,15 +120,55 @@ const WEEK_GROUPS = [
 // LOGIQUE DU WIDGET - normalement pas besoin d'y toucher
 // ============================================================
 
+// On déclare deux "emplacements" de colonnes que tu vas toi-même assigner
+// dans le panneau latéral de Grist (Creator Panel), dans l'ordre exact de ton tableau.
+// C'est cette étape manuelle qui garantit que l'ordre affiché sera le bon,
+// contrairement à avant où on devinait l'ordre automatiquement.
 grist.ready({
   requiredAccess: "full",
+  columns: [
+    {
+      name: "fixed",
+      title: "Colonnes fixes (Employé, etc.) — dans l'ordre",
+      type: "Any",
+      allowMultiple: true,
+    },
+    {
+      name: "days",
+      title: "Colonnes de dates/tâches — dans l'ordre exact du tableau",
+      type: "Any",
+      allowMultiple: true,
+    },
+  ],
 });
 
-grist.onRecords((records) => {
-  render(records);
+let lastMappings = null;
+
+grist.onRecords((records, mappings) => {
+  lastMappings = mappings;
+  render(records, mappings);
 });
 
-function render(records) {
+// Garde en mémoire la valeur brute d'origine de chaque cellule (avant affichage en texte)
+// pour savoir, au moment de la sauvegarde, si c'était une liste (Choice List / Reference List)
+// ou une valeur simple (Texte, Nombre...).
+const cellOriginalValues = {};
+
+// Grist encode les colonnes "Choix multiples" et "Référence multiple" sous la forme
+// d'un tableau JS dont le 1er élément est la chaîne spéciale "L", ex: ["L", "Lundi", "Mardi"]
+function isGristList(value) {
+  return Array.isArray(value) && value[0] === "L";
+}
+
+// Formate une valeur brute Grist en texte affichable dans la cellule
+function formatCellValue(value) {
+  if (isGristList(value)) {
+    return value.slice(1).join(", ");
+  }
+  return value ?? "";
+}
+
+function render(records, mappings) {
   const statusEl = document.getElementById("status");
   const appEl = document.getElementById("app");
 
@@ -139,23 +178,33 @@ function render(records) {
     return;
   }
 
-  // Ordre des colonnes tel que reçu de Grist pour le 1er enregistrement
-  const allKeys = Object.keys(records[0]).filter((k) => k !== "id");
-
-  const expectedTotal = FIXED_COLS_COUNT + WEEK_GROUPS.reduce((a, w) => a + w.count, 0);
-  if (allKeys.length !== expectedTotal) {
+  if (!mappings || !mappings.fixed || !mappings.days) {
     appEl.innerHTML =
-      `<div id="empty-msg">⚠️ Attendu ${expectedTotal} colonnes (config), ` +
-      `mais ${allKeys.length} colonnes reçues de Grist. Vérifie FIXED_COLS_COUNT ` +
-      `et WEEK_GROUPS dans le code, ou l'ordre des colonnes dans la vue.</div>`;
+      '<div id="empty-msg">⚙️ Configure d\'abord les colonnes : ouvre le panneau ' +
+      '"Colonnes requises" à droite du widget dans Grist, et assigne tes colonnes ' +
+      '"fixes" et "dates/tâches" dans le bon ordre.</div>';
     statusEl.textContent = "";
     return;
   }
 
-  const fixedKeys = allKeys.slice(0, FIXED_COLS_COUNT);
-  let cursor = FIXED_COLS_COUNT;
+  // mappings.fixed et mappings.days sont des tableaux de colId, dans l'ordre
+  // où TU les as sélectionnés dans le panneau Grist. C'est cet ordre qui compte.
+  const fixedKeys = mappings.fixed;
+  const dayKeys = mappings.days;
+
+  const expectedTotal = WEEK_GROUPS.reduce((a, w) => a + w.count, 0);
+  if (dayKeys.length !== expectedTotal) {
+    appEl.innerHTML =
+      `<div id="empty-msg">⚠️ Attendu ${expectedTotal} colonnes "dates/tâches" ` +
+      `(configuré dans WEEK_GROUPS), mais ${dayKeys.length} colonnes assignées ` +
+      `dans le panneau Grist. Vérifie ta sélection, ou ajuste WEEK_GROUPS dans le code.</div>`;
+    statusEl.textContent = "";
+    return;
+  }
+
+  let cursor = 0;
   const weekKeyGroups = WEEK_GROUPS.map((w) => {
-    const keys = allKeys.slice(cursor, cursor + w.count);
+    const keys = dayKeys.slice(cursor, cursor + w.count);
     cursor += w.count;
     return { label: w.label, keys };
   });
@@ -187,12 +236,15 @@ function render(records) {
   records.forEach((record) => {
     html += "<tr>";
     fixedKeys.forEach((key) => {
-      html += `<td class="editable" data-row-id="${record.id}" data-col="${key}">${escapeHtml(record[key] ?? "")}</td>`;
+      const rawValue = record[key];
+      cellOriginalValues[`${record.id}_${key}`] = rawValue;
+      html += `<td class="editable" data-row-id="${record.id}" data-col="${key}">${escapeHtml(formatCellValue(rawValue))}</td>`;
     });
     weekKeyGroups.forEach((group) => {
       group.keys.forEach((key) => {
-        const value = record[key] ?? "";
-        html += `<td class="editable" data-row-id="${record.id}" data-col="${key}">${escapeHtml(value)}</td>`;
+        const rawValue = record[key];
+        cellOriginalValues[`${record.id}_${key}`] = rawValue;
+        html += `<td class="editable" data-row-id="${record.id}" data-col="${key}">${escapeHtml(formatCellValue(rawValue))}</td>`;
       });
     });
     html += "</tr>";
@@ -200,7 +252,7 @@ function render(records) {
 
   html += "</tbody></table>";
   appEl.innerHTML = html;
-  statusEl.textContent = `${records.length} ligne(s) • ${WEEK_GROUPS.length} semaines affichées (${allKeys.length} colonnes)`;
+  statusEl.textContent = `${records.length} ligne(s) • ${WEEK_GROUPS.length} semaines affichées (${fixedKeys.length + dayKeys.length} colonnes)`;
 
   attachEditHandlers();
 }
@@ -234,12 +286,30 @@ function attachEditHandlers() {
   });
 }
 
-async function saveValue(rowId, colId, value) {
+async function saveValue(rowId, colId, newText) {
   try {
+    const originalValue = cellOriginalValues[`${rowId}_${colId}`];
+    let valueToSend;
+
+    if (isGristList(originalValue)) {
+      // Colonne "Choix multiples" : on reconstruit le format ["L", "choix1", "choix2", ...]
+      // à partir du texte séparé par des virgules tapé par l'utilisateur.
+      const items = newText
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+      valueToSend = ["L", ...items];
+    } else {
+      valueToSend = newText;
+    }
+
     await grist.selectedTable.update({
       id: rowId,
-      fields: { [colId]: value },
+      fields: { [colId]: valueToSend },
     });
+
+    // Met à jour le cache local pour que la prochaine édition reparte de la bonne valeur
+    cellOriginalValues[`${rowId}_${colId}`] = valueToSend;
   } catch (err) {
     console.error("Erreur d'écriture Grist:", err);
     document.getElementById("status").textContent =
