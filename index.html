@@ -13,11 +13,9 @@
     --border-color: #ddd;
     --cell-hover: #f5f7fa;
 
-    /* ==== Tailles par colonne : modifiable ici en dur, OU via les curseurs
-       affichés en haut du widget ==== */
-    --col1-width: 92px;   /* colonne 1 (noms) */
-    --col2-width: 186px;  /* colonne 2 */
-    --day-width: 111px;   /* toutes les colonnes de dates/tâches */
+    --col1-width: 92px;
+    --col2-width: 186px;
+    --day-width: 111px;
     --cell-min-height: 70px;
     --cell-font-size: 13px;
   }
@@ -51,12 +49,6 @@
     text-align: center;
     font-weight: 600;
     font-size: 13px;
-    cursor: pointer;
-    user-select: none;
-  }
-
-  th.week-header:hover {
-    background: #46607a;
   }
 
   th.fixed-header {
@@ -117,7 +109,7 @@
     flex-wrap: wrap;
     gap: 16px;
     align-items: center;
-    margin-bottom: 10px;
+    margin-bottom: 8px;
     padding: 8px 12px;
     background: #eef1f4;
     border-radius: 6px;
@@ -140,11 +132,35 @@
     display: inline-block;
     text-align: right;
   }
+
+  .week-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .week-btn {
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 2px solid var(--week-bg);
+    background: var(--week-bg);
+    color: white;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .week-btn.hidden-state {
+    background: white;
+    color: var(--week-bg);
+  }
 </style>
 </head>
 <body>
 
 <div id="status">Chargement…</div>
+
 <div class="size-controls">
   <label>Largeur col. 1 :
     <input type="range" id="col1Slider" min="40" max="300" value="92">
@@ -167,6 +183,9 @@
     <span class="value-display" id="fontValue">13px</span>
   </label>
 </div>
+
+<div class="week-buttons" id="weekButtons"></div>
+
 <div class="scroll-wrap">
   <div id="app"></div>
 </div>
@@ -218,6 +237,13 @@ const CHOICE_COLORS = {
 const MATERIEL_KEYWORD = "Matériels";
 
 // ============================================================
+// ÉTAT PERSISTANT (survit aux re-rendus déclenchés par une édition)
+// ============================================================
+
+const hiddenWeeks = new Set(); // indices de semaine actuellement masqués
+let dayChoiceMap = {}; // colId -> true si colonne "Choix multiples" (position impaire)
+
+// ============================================================
 // LOGIQUE DU WIDGET
 // ============================================================
 
@@ -262,8 +288,14 @@ function renderChips(items) {
     .join("");
 }
 
-function rawTextForList(items) {
-  return (items || []).join(", ");
+// Récupère la liste d'items d'une cellule "Choix multiples", quel que soit
+// son état actuel (vraie liste Grist, texte laissé par une ancienne version, ou vide).
+function extractChoiceItems(rawValue) {
+  if (isGristList(rawValue)) return rawValue.slice(1);
+  if (typeof rawValue === "string" && rawValue.trim().length > 0) {
+    return rawValue.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+  }
+  return [];
 }
 
 function render(records, mappings) {
@@ -298,6 +330,14 @@ function render(records, mappings) {
     return;
   }
 
+  // Colonne d'index pair (0, 2, 4...) dans la séquence "days" = colonne "date"
+  // impaire dans ton tableau d'origine = Choix multiples.
+  // Colonne d'index impair (1, 3, 5...) = colonne "tâche" = texte simple.
+  dayChoiceMap = {};
+  dayKeys.forEach((key, idx) => {
+    dayChoiceMap[key] = idx % 2 === 0;
+  });
+
   let cursor = 0;
   const weekKeyGroups = WEEK_GROUPS.map((w, idx) => {
     const keys = dayKeys.slice(cursor, cursor + w.count);
@@ -305,7 +345,9 @@ function render(records, mappings) {
     return { label: w.label, keys, weekIndex: idx };
   });
 
-  // ---- colgroup : largeur par colonne (col1 / col2 / colonnes jour) ----
+  renderWeekButtons(weekKeyGroups);
+
+  // ---- colgroup : largeur par colonne ----
   let html = "<table><colgroup>";
   fixedKeys.forEach((key, i) => {
     const widthVar = i === 0 ? "var(--col1-width)" : "var(--col2-width)";
@@ -324,7 +366,7 @@ function render(records, mappings) {
   });
 
   weekKeyGroups.forEach((group) => {
-    html += `<th class="week-header" colspan="${group.keys.length}" data-week-index="${group.weekIndex}" title="Cliquer pour afficher/masquer">${escapeHtml(group.label)} <span style="font-size:10px;">(masquer/afficher)</span></th>`;
+    html += `<th class="week-header" colspan="${group.keys.length}">${escapeHtml(group.label)}</th>`;
   });
   html += "</tr></thead><tbody>";
 
@@ -334,26 +376,22 @@ function render(records, mappings) {
     fixedKeys.forEach((key, i) => {
       const rawValue = record[key];
       cellOriginalValues[`${record.id}_${key}`] = rawValue;
-      const isList = isGristList(rawValue);
-      const displayHtml = isList
-        ? renderChips(rawValue.slice(1))
-        : escapeHtml(rawValue ?? "");
+      const plainText = String(rawValue ?? "");
       const isFirstFixedCol = i === 0;
-      const plainText = isList ? "" : String(rawValue ?? "");
       const highlight =
         isFirstFixedCol && plainText.includes(MATERIEL_KEYWORD) ? " materiel-highlight" : "";
-      html += `<td class="editable${highlight}" data-row-id="${record.id}" data-col="${key}" data-is-list="${isList}">${displayHtml}</td>`;
+      html += `<td class="editable${highlight}" data-row-id="${record.id}" data-col="${key}" data-is-list="false">${escapeHtml(plainText)}</td>`;
     });
 
     weekKeyGroups.forEach((group) => {
       group.keys.forEach((key) => {
         const rawValue = record[key];
         cellOriginalValues[`${record.id}_${key}`] = rawValue;
-        const isList = isGristList(rawValue);
-        const displayHtml = isList
-          ? renderChips(rawValue.slice(1))
+        const isChoiceCol = dayChoiceMap[key];
+        const displayHtml = isChoiceCol
+          ? renderChips(extractChoiceItems(rawValue))
           : escapeHtml(rawValue ?? "");
-        html += `<td class="editable wk-${group.weekIndex}" data-row-id="${record.id}" data-col="${key}" data-is-list="${isList}">${displayHtml}</td>`;
+        html += `<td class="editable wk-${group.weekIndex}" data-row-id="${record.id}" data-col="${key}" data-is-list="${isChoiceCol}">${displayHtml}</td>`;
       });
     });
 
@@ -362,31 +400,72 @@ function render(records, mappings) {
 
   html += "</tbody></table>";
   appEl.innerHTML = html;
-  statusEl.textContent = `${records.length} ligne(s) • ${WEEK_GROUPS.length} semaines affichées (${fixedKeys.length + dayKeys.length} colonnes)`;
+  statusEl.textContent = `${records.length} ligne(s) • ${WEEK_GROUPS.length} semaines (${fixedKeys.length + dayKeys.length} colonnes)`;
 
   attachEditHandlers();
-  attachWeekToggleHandlers();
+  applyWeekVisibility(); // réapplique l'état masqué/affiché mémorisé, même après un re-rendu
 }
 
-// IMPORTANT : pour masquer une colonne HTML de façon fiable (sans décaler
-// les autres colonnes), il faut utiliser "visibility: collapse" sur le <col>
-// correspondant — pas "display: none", qui peut casser l'alignement des
-// colonnes suivantes dans certains navigateurs. On agit donc uniquement
-// sur les <col>, jamais sur les <td>/<th> individuellement.
-function attachWeekToggleHandlers() {
-  document.querySelectorAll("th.week-header").forEach((th) => {
-    th.addEventListener("click", () => {
-      const idx = th.dataset.weekIndex;
-      const cols = document.querySelectorAll(`col.wk-${idx}`);
-      if (cols.length === 0) return;
-      const currentlyHidden = cols[0].style.visibility === "collapse";
-      cols.forEach((c) => {
-        c.style.visibility = currentlyHidden ? "" : "collapse";
-      });
-      th.style.opacity = currentlyHidden ? "1" : "0.5";
+// ============================================================
+// BOUTONS "SEMAINE X" (persistants, en dehors du tableau)
+// ============================================================
+
+function renderWeekButtons(weekKeyGroups) {
+  const container = document.getElementById("weekButtons");
+  // Ne reconstruit les boutons que si le nombre de semaines a changé,
+  // pour ne pas perdre leur état visuel à chaque re-rendu.
+  if (container.dataset.built === "true") {
+    updateWeekButtonStyles();
+    return;
+  }
+  container.innerHTML = "";
+  weekKeyGroups.forEach((group) => {
+    const btn = document.createElement("button");
+    btn.className = "week-btn";
+    btn.textContent = group.label;
+    btn.dataset.weekIndex = group.weekIndex;
+    btn.addEventListener("click", () => toggleWeek(group.weekIndex));
+    container.appendChild(btn);
+  });
+  container.dataset.built = "true";
+  updateWeekButtonStyles();
+}
+
+function toggleWeek(idx) {
+  if (hiddenWeeks.has(idx)) {
+    hiddenWeeks.delete(idx);
+  } else {
+    hiddenWeeks.add(idx);
+  }
+  applyWeekVisibility();
+  updateWeekButtonStyles();
+}
+
+function applyWeekVisibility() {
+  hiddenWeeks.forEach((idx) => {
+    document.querySelectorAll(`col.wk-${idx}`).forEach((c) => {
+      c.style.visibility = "collapse";
     });
   });
+  // Et on s'assure que celles qui ne sont pas masquées sont bien visibles
+  document.querySelectorAll("col[class^='wk-']").forEach((c) => {
+    const idx = Number(c.className.replace("wk-", ""));
+    if (!hiddenWeeks.has(idx)) {
+      c.style.visibility = "";
+    }
+  });
 }
+
+function updateWeekButtonStyles() {
+  document.querySelectorAll(".week-btn").forEach((btn) => {
+    const idx = Number(btn.dataset.weekIndex);
+    btn.classList.toggle("hidden-state", hiddenWeeks.has(idx));
+  });
+}
+
+// ============================================================
+// ÉDITION DES CELLULES
+// ============================================================
 
 function attachEditHandlers() {
   document.querySelectorAll("td.editable").forEach((cell) => {
@@ -397,7 +476,7 @@ function attachEditHandlers() {
         const rowId = cell.dataset.rowId;
         const colId = cell.dataset.col;
         const original = cellOriginalValues[`${rowId}_${colId}`];
-        cell.textContent = rawTextForList(isGristList(original) ? original.slice(1) : []);
+        cell.textContent = extractChoiceItems(original).join(", ");
       }
       cell.setAttribute("contenteditable", "true");
       cell.focus();
@@ -426,9 +505,8 @@ function attachEditHandlers() {
 
 async function saveValue(rowId, colId, newText, cellEl) {
   try {
-    const originalValue = cellOriginalValues[`${rowId}_${colId}`];
+    const isList = !!dayChoiceMap[colId];
     let valueToSend;
-    let isList = isGristList(originalValue);
 
     if (isList) {
       const items = newText
