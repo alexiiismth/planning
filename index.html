@@ -12,6 +12,12 @@
     --fixed-bg: #1a252f;
     --border-color: #ddd;
     --cell-hover: #f5f7fa;
+
+    /* ==== Taille des cases : modifiable ici en dur, OU via les curseurs
+       affichés en haut du widget (les curseurs prennent le dessus une fois touchés) ==== */
+    --cell-width: 110px;      /* largeur d'une case */
+    --cell-min-height: 40px;  /* hauteur minimum d'une case */
+    --cell-font-size: 13px;   /* taille du texte dans les cases */
   }
 
   body {
@@ -58,8 +64,11 @@
 
   td.editable {
     cursor: text;
-    min-width: 70px;
-    max-width: 160px;
+    width: var(--cell-width);
+    min-width: var(--cell-width);
+    max-width: var(--cell-width);
+    min-height: var(--cell-min-height);
+    font-size: var(--cell-font-size);
     white-space: pre-wrap;
     word-break: break-word;
     overflow-wrap: break-word;
@@ -103,14 +112,57 @@
   .scroll-wrap {
     overflow-x: auto;
   }
+  .size-controls {
+    display: flex;
+    gap: 20px;
+    align-items: center;
+    margin-bottom: 10px;
+    padding: 8px 12px;
+    background: #eef1f4;
+    border-radius: 6px;
+    font-size: 12px;
+  }
+
+  .size-controls label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .size-controls input[type="range"] {
+    width: 120px;
+  }
 </style>
 </head>
 <body>
 
 <div id="status">Chargement…</div>
+<div class="size-controls">
+  <label>Largeur des cases :
+    <input type="range" id="widthSlider" min="60" max="260" value="110">
+  </label>
+  <label>Hauteur min. des cases :
+    <input type="range" id="heightSlider" min="24" max="120" value="40">
+  </label>
+  <label>Taille du texte :
+    <input type="range" id="fontSlider" min="10" max="20" value="13">
+  </label>
+</div>
 <div class="scroll-wrap">
   <div id="app"></div>
 </div>
+
+<script>
+document.getElementById("widthSlider").addEventListener("input", (e) => {
+  document.documentElement.style.setProperty("--cell-width", e.target.value + "px");
+});
+document.getElementById("heightSlider").addEventListener("input", (e) => {
+  document.documentElement.style.setProperty("--cell-min-height", e.target.value + "px");
+});
+document.getElementById("fontSlider").addEventListener("input", (e) => {
+  document.documentElement.style.setProperty("--cell-font-size", e.target.value + "px");
+});
+</script>
 
 <script>
 // ============================================================
