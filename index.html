@@ -13,7 +13,6 @@
     --border-color: #ddd;
     --cell-hover: #f5f7fa;
 
-    /* Tailles fixées (modifiable directement ici si besoin) */
     --col1-width: 92px;
     --col2-width: 186px;
     --day-width: 111px;
@@ -55,6 +54,7 @@
   th.fixed-header {
     background: var(--fixed-bg);
     color: var(--header-color);
+    text-align: center;
   }
 
   td.editable {
@@ -78,6 +78,18 @@
 
   td.materiel-highlight {
     background: #d8b4fe !important;
+  }
+
+  td.date-cell {
+    background: #f0f0f0;
+    color: #333;
+    font-weight: 600;
+    text-align: center;
+  }
+
+  td.date-cell[contenteditable="true"] {
+    background: #fffde7;
+    color: #333;
   }
 
   .chip {
@@ -144,7 +156,8 @@
 // CONFIGURATION
 // ============================================================
 
-const FIXED_COL_LABELS = ["Employé", "Colonne 2"];
+// Libellé unique affiché au-dessus des 2 colonnes fixes fusionnées
+const FIXED_MERGED_LABEL = "Employé";
 
 const WEEK_GROUPS = [
   { label: "Semaine 31", count: 4 },
@@ -169,17 +182,22 @@ const CHOICE_COLORS = {
 
 const MATERIEL_KEYWORD = "Matériels";
 
+// La toute première ligne de données contient la date (dans les colonnes Choix
+// multiples), servant de "sous-en-tête". On la fige : affichage en texte simple,
+// non modifiable, alors que le reste de la colonne reste éditable en Choix multiples.
+const FREEZE_FIRST_ROW_AS_DATE = true;
+
 // ============================================================
 // ÉTAT PERSISTANT
 // ============================================================
 
 const hiddenWeeks = new Set();
-let dayChoiceMap = {};
+let dayChoiceMap = {};       // colId -> true si type réel Grist = ChoiceList
+let columnTypesCache = {};   // colId -> type réel Grist (ex: "ChoiceList", "Date", "Text")
+let lastKeysSignature = null;
 
 // ============================================================
-// BOUTONS "SEMAINE X" — créés une fois, dès le chargement de la page,
-// indépendamment des données Grist. Comme ça ils s'affichent toujours,
-// même avant que le mapping de colonnes soit configuré.
+// BOUTONS "SEMAINE X"
 // ============================================================
 
 function buildWeekButtonsOnce() {
@@ -224,7 +242,6 @@ function updateWeekButtonStyles() {
   });
 }
 
-// Construit les boutons tout de suite, sans attendre les données Grist
 buildWeekButtonsOnce();
 
 // ============================================================
@@ -249,9 +266,34 @@ grist.ready({
   ],
 });
 
-grist.onRecords((records, mappings) => {
+grist.onRecords(async (records, mappings) => {
+  await ensureColumnTypesLoaded(mappings);
   render(records, mappings);
 });
+
+// Interroge Grist pour connaître le VRAI type de chaque colonne mappée
+// (fiable, ne dépend jamais de la position ni du contenu de la cellule).
+async function ensureColumnTypesLoaded(mappings) {
+  if (!mappings || !mappings.fixed || !mappings.days) return;
+  const allKeys = [...mappings.fixed, ...mappings.days];
+  const signature = allKeys.join("|");
+  if (signature === lastKeysSignature) return; // déjà chargé, pas besoin de refaire l'appel
+
+  try {
+    const colsMeta = await grist.docApi.fetchTable("_grist_Tables_column");
+    const typeByColId = {};
+    for (let i = 0; i < colsMeta.colId.length; i++) {
+      typeByColId[colsMeta.colId[i]] = colsMeta.type[i];
+    }
+    columnTypesCache = {};
+    allKeys.forEach((key) => {
+      columnTypesCache[key] = typeByColId[key] || null;
+    });
+    lastKeysSignature = signature;
+  } catch (err) {
+    console.error("Impossible de lire les types de colonnes:", err);
+  }
+}
 
 const cellOriginalValues = {};
 
@@ -278,6 +320,14 @@ function extractChoiceItems(rawValue) {
     return rawValue.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
   }
   return [];
+}
+
+// Formate une valeur de type Date/DateTime Grist (timestamp en secondes) en texte lisible
+function formatDateValue(rawValue) {
+  if (typeof rawValue !== "number") return String(rawValue ?? "");
+  const d = new Date(rawValue * 1000);
+  if (isNaN(d.getTime())) return String(rawValue);
+  return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
 function render(records, mappings) {
@@ -312,9 +362,10 @@ function render(records, mappings) {
     return;
   }
 
+  // Type réel de chaque colonne, basé sur les métadonnées Grist (pas la position)
   dayChoiceMap = {};
-  dayKeys.forEach((key, idx) => {
-    dayChoiceMap[key] = idx % 2 === 0;
+  dayKeys.forEach((key) => {
+    dayChoiceMap[key] = columnTypesCache[key] === "ChoiceList";
   });
 
   let cursor = 0;
@@ -336,17 +387,16 @@ function render(records, mappings) {
   });
   html += "</colgroup><thead><tr>";
 
-  fixedKeys.forEach((key, i) => {
-    const label = FIXED_COL_LABELS[i] || key;
-    html += `<th class="fixed-header">${escapeHtml(label)}</th>`;
-  });
+  // En-tête fusionné pour les colonnes fixes (Employé + Colonne 2)
+  html += `<th class="fixed-header" colspan="${fixedKeys.length}">${escapeHtml(FIXED_MERGED_LABEL)}</th>`;
 
   weekKeyGroups.forEach((group) => {
     html += `<th class="week-header" colspan="${group.keys.length}">${escapeHtml(group.label)}</th>`;
   });
   html += "</tr></thead><tbody>";
 
-  records.forEach((record) => {
+  records.forEach((record, rowIndex) => {
+    const isDateRow = FREEZE_FIRST_ROW_AS_DATE && rowIndex === 0;
     html += "<tr>";
 
     fixedKeys.forEach((key, i) => {
@@ -363,10 +413,29 @@ function render(records, mappings) {
       group.keys.forEach((key) => {
         const rawValue = record[key];
         cellOriginalValues[`${record.id}_${key}`] = rawValue;
-        const isChoiceCol = dayChoiceMap[key];
-        const displayHtml = isChoiceCol
-          ? renderChips(extractChoiceItems(rawValue))
-          : escapeHtml(rawValue ?? "");
+        const colType = columnTypesCache[key];
+        const isChoiceCol = colType === "ChoiceList";
+        const isDateCol = colType === "Date" || (colType && colType.startsWith("DateTime"));
+
+        // Cas spécial : 1ère ligne d'une colonne Choix multiples = case "date".
+        // On l'affiche et on la modifie comme du texte simple, mais on l'enregistre
+        // quand même sous forme de liste à 1 élément pour rester compatible avec
+        // le type réel de la colonne (Choix multiples) côté Grist.
+        if (isChoiceCol && isDateRow) {
+          const dateText = extractChoiceItems(rawValue).join(", ") || String(rawValue ?? "");
+          html += `<td class="editable date-cell" data-row-id="${record.id}" data-col="${key}" data-cell-type="date">${escapeHtml(dateText)}</td>`;
+          return;
+        }
+
+        let displayHtml;
+        if (isChoiceCol) {
+          displayHtml = renderChips(extractChoiceItems(rawValue));
+        } else if (isDateCol) {
+          displayHtml = escapeHtml(formatDateValue(rawValue));
+        } else {
+          displayHtml = escapeHtml(rawValue ?? "");
+        }
+
         html += `<td class="editable wk-${group.weekIndex}" data-row-id="${record.id}" data-col="${key}" data-is-list="${isChoiceCol}">${displayHtml}</td>`;
       });
     });
@@ -386,8 +455,12 @@ function attachEditHandlers() {
   document.querySelectorAll("td.editable").forEach((cell) => {
     cell.addEventListener("click", function onClick() {
       if (cell.getAttribute("contenteditable") === "true") return;
+      const cellType = cell.dataset.cellType;
       const isList = cell.dataset.isList === "true";
-      if (isList) {
+
+      if (cellType === "date") {
+        // Rien à transformer : la case affiche déjà du texte simple
+      } else if (isList) {
         const rowId = cell.dataset.rowId;
         const colId = cell.dataset.col;
         const original = cellOriginalValues[`${rowId}_${colId}`];
@@ -403,7 +476,11 @@ function attachEditHandlers() {
       const rowId = Number(cell.dataset.rowId);
       const colId = cell.dataset.col;
       const newValue = cell.textContent;
-      await saveValue(rowId, colId, newValue, cell);
+      if (cell.dataset.cellType === "date") {
+        await saveDateCell(rowId, colId, newValue, cell);
+      } else {
+        await saveValue(rowId, colId, newValue, cell);
+      }
     });
 
     cell.addEventListener("keydown", function onKeydown(e) {
@@ -418,9 +495,33 @@ function attachEditHandlers() {
   });
 }
 
+// Sauvegarde une case "date" : garde le texte tel quel (pas de découpage par
+// virgule), mais l'enregistre sous forme de liste à 1 élément pour rester
+// compatible avec le type réel de la colonne (Choix multiples) dans Grist.
+async function saveDateCell(rowId, colId, newText, cellEl) {
+  try {
+    const trimmed = newText.trim();
+    const valueToSend = trimmed.length > 0 ? ["L", trimmed] : ["L"];
+
+    await grist.selectedTable.update({
+      id: rowId,
+      fields: { [colId]: valueToSend },
+    });
+
+    cellOriginalValues[`${rowId}_${colId}`] = valueToSend;
+    if (cellEl) {
+      cellEl.textContent = trimmed;
+    }
+  } catch (err) {
+    console.error("Erreur d'écriture Grist (case date):", err);
+    document.getElementById("status").textContent =
+      "Erreur lors de l'enregistrement — vérifie les droits d'accès du widget.";
+  }
+}
+
 async function saveValue(rowId, colId, newText, cellEl) {
   try {
-    const isList = !!dayChoiceMap[colId];
+    const isList = columnTypesCache[colId] === "ChoiceList";
     let valueToSend;
 
     if (isList) {
