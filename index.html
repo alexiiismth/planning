@@ -378,7 +378,13 @@ function renderChips(items) {
 }
 
 function extractChoiceItems(rawValue) {
-  if (isGristList(rawValue)) return rawValue.slice(1);
+  if (Array.isArray(rawValue)) {
+    // Format standard Grist pour les listes : ["L", "Choix1", "Choix2", ...]
+    if (rawValue[0] === "L") return rawValue.slice(1);
+    // Filet de sécurité : si jamais Grist renvoie directement un tableau de
+    // choix sans la balise "L", on le prend quand même tel quel.
+    return rawValue.filter((v) => typeof v === "string");
+  }
   if (typeof rawValue === "string" && rawValue.trim().length > 0) {
     return rawValue.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
   }
@@ -592,6 +598,7 @@ function openChoiceDropdown(cell) {
   activeDropdown = { rowId, colId };
 
   const original = cellOriginalValues[`${rowId}_${colId}`];
+  console.log("Valeur brute Grist pour cette case:", original);
   const selected = new Set(extractChoiceItems(original));
   dropdownPendingItems = extractChoiceItems(original); // copie de travail synchrone
 
