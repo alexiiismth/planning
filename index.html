@@ -304,6 +304,24 @@ function isGristList(value) {
   return Array.isArray(value) && value[0] === "L";
 }
 
+// Détection fiable basée sur ton propre système de nommage : le DERNIER chiffre
+// du nom de la colonne indique son type. Impair = Choix multiples, pair = texte.
+// Fonctionne quel que soit le nom réel (espace ou underscore), ex: "32 5", "31_3".
+function isChoiceColByName(colId) {
+  const match = String(colId).match(/(\d+)\s*$/);
+  if (!match) return null; // pas de chiffre trouvé à la fin -> on ne sait pas via le nom
+  return parseInt(match[1], 10) % 2 === 1;
+}
+
+// Détermine si une colonne est "Choix multiples", en priorité via son nom
+// (ta convention: dernier chiffre impair), avec les métadonnées Grist et la
+// valeur réelle en secours si jamais le nom ne suit pas le motif attendu.
+function isChoiceColumn(colId, colType, rawValue) {
+  const byName = isChoiceColByName(colId);
+  if (byName !== null) return byName;
+  return colType === "ChoiceList" || isGristList(rawValue);
+}
+
 function renderChips(items) {
   if (!items || items.length === 0) return "";
   return items
@@ -371,7 +389,7 @@ function render(records, mappings) {
   // métadonnées a échoué.
   dayChoiceMap = {};
   dayKeys.forEach((key) => {
-    dayChoiceMap[key] = columnTypesCache[key] === "ChoiceList";
+    dayChoiceMap[key] = isChoiceColumn(key, columnTypesCache[key], null);
   });
 
   let cursor = 0;
@@ -420,8 +438,8 @@ function render(records, mappings) {
         const rawValue = record[key];
         cellOriginalValues[`${record.id}_${key}`] = rawValue;
         const colType = columnTypesCache[key];
-        const isChoiceCol = colType === "ChoiceList" || isGristList(rawValue);
-        const isDateCol = colType === "Date" || (colType && colType.startsWith("DateTime"));
+        const isChoiceCol = isChoiceColumn(key, colType, rawValue);
+        const isDateCol = !isChoiceCol && (colType === "Date" || (colType && colType.startsWith("DateTime")));
 
         // Cas spécial : 1ère ligne d'une colonne Choix multiples = case "date".
         // On l'affiche et on la modifie comme du texte simple, mais on l'enregistre
@@ -532,7 +550,7 @@ async function saveDateCell(rowId, colId, newText, cellEl) {
 async function saveValue(rowId, colId, newText, cellEl) {
   try {
     const originalValue = cellOriginalValues[`${rowId}_${colId}`];
-    const isList = columnTypesCache[colId] === "ChoiceList" || isGristList(originalValue);
+    const isList = isChoiceColumn(colId, columnTypesCache[colId], originalValue);
     let valueToSend;
 
     if (isList) {
