@@ -76,6 +76,22 @@
     white-space: pre-wrap;
   }
 
+  td.choice-cell {
+    cursor: pointer;
+    min-height: var(--cell-min-height);
+    font-size: var(--cell-font-size);
+    white-space: pre-wrap;
+  }
+
+  td.choice-cell:hover {
+    background: var(--cell-hover);
+  }
+
+  td.choice-cell.dropdown-open {
+    outline: 2px solid #3498db;
+    background: #fffde7;
+  }
+
   td.materiel-highlight {
     background: #d8b4fe !important;
   }
@@ -139,6 +155,56 @@
     background: white;
     color: var(--week-bg);
   }
+
+  /* ---- Menu déroulant Choix multiples ---- */
+  .choice-dropdown {
+    position: fixed;
+    background: white;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.2);
+    padding: 8px;
+    z-index: 1000;
+    display: none;
+    min-width: 170px;
+    max-height: 260px;
+    overflow-y: auto;
+  }
+
+  .choice-dropdown.open {
+    display: block;
+  }
+
+  .choice-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 6px;
+    cursor: pointer;
+    border-radius: 5px;
+  }
+
+  .choice-option:hover {
+    background: #f0f2f5;
+  }
+
+  .choice-option input {
+    cursor: pointer;
+  }
+
+  .choice-dropdown-close {
+    display: block;
+    width: 100%;
+    margin-top: 6px;
+    padding: 5px;
+    border: none;
+    border-radius: 5px;
+    background: var(--week-bg);
+    color: white;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+  }
 </style>
 </head>
 <body>
@@ -151,12 +217,13 @@
   <div id="app"></div>
 </div>
 
+<div class="choice-dropdown" id="choiceDropdown"></div>
+
 <script>
 // ============================================================
 // CONFIGURATION
 // ============================================================
 
-// Libellé unique affiché au-dessus des 2 colonnes fixes fusionnées
 const FIXED_MERGED_LABEL = "Employé";
 
 const WEEK_GROUPS = [
@@ -181,10 +248,6 @@ const CHOICE_COLORS = {
 };
 
 const MATERIEL_KEYWORD = "Matériels";
-
-// La toute première ligne de données contient la date (dans les colonnes Choix
-// multiples), servant de "sous-en-tête". On la fige : affichage en texte simple,
-// non modifiable, alors que le reste de la colonne reste éditable en Choix multiples.
 const FREEZE_FIRST_ROW_AS_DATE = true;
 
 // ============================================================
@@ -192,10 +255,11 @@ const FREEZE_FIRST_ROW_AS_DATE = true;
 // ============================================================
 
 const hiddenWeeks = new Set();
-let dayChoiceMap = {};       // colId -> true si type réel Grist = ChoiceList
-let columnTypesCache = {};   // colId -> type réel Grist (ex: "ChoiceList", "Date", "Text")
+let dayChoiceMap = {};
+let columnTypesCache = {};
 let lastKeysSignature = null;
-let columnTypesLoadError = false; // true si la lecture des métadonnées a échoué
+let columnTypesLoadError = false;
+let activeDropdown = { rowId: null, colId: null };
 
 // ============================================================
 // BOUTONS "SEMAINE X"
@@ -217,11 +281,8 @@ function buildWeekButtonsOnce() {
 }
 
 function toggleWeek(idx) {
-  if (hiddenWeeks.has(idx)) {
-    hiddenWeeks.delete(idx);
-  } else {
-    hiddenWeeks.add(idx);
-  }
+  if (hiddenWeeks.has(idx)) hiddenWeeks.delete(idx);
+  else hiddenWeeks.add(idx);
   applyWeekVisibility();
   updateWeekButtonStyles();
 }
@@ -230,9 +291,7 @@ function applyWeekVisibility() {
   WEEK_GROUPS.forEach((w, idx) => {
     const cols = document.querySelectorAll(`col.wk-${idx}`);
     const shouldHide = hiddenWeeks.has(idx);
-    cols.forEach((c) => {
-      c.style.visibility = shouldHide ? "collapse" : "";
-    });
+    cols.forEach((c) => { c.style.visibility = shouldHide ? "collapse" : ""; });
   });
 }
 
@@ -252,18 +311,8 @@ buildWeekButtonsOnce();
 grist.ready({
   requiredAccess: "full",
   columns: [
-    {
-      name: "fixed",
-      title: "Colonnes fixes (Employé, etc.) — dans l'ordre",
-      type: "Any",
-      allowMultiple: true,
-    },
-    {
-      name: "days",
-      title: "Colonnes de dates/tâches — dans l'ordre exact du tableau",
-      type: "Any",
-      allowMultiple: true,
-    },
+    { name: "fixed", title: "Colonnes fixes (Employé, etc.) — dans l'ordre", type: "Any", allowMultiple: true },
+    { name: "days", title: "Colonnes de dates/tâches — dans l'ordre exact du tableau", type: "Any", allowMultiple: true },
   ],
 });
 
@@ -272,13 +321,11 @@ grist.onRecords(async (records, mappings) => {
   render(records, mappings);
 });
 
-// Interroge Grist pour connaître le VRAI type de chaque colonne mappée
-// (fiable, ne dépend jamais de la position ni du contenu de la cellule).
 async function ensureColumnTypesLoaded(mappings) {
   if (!mappings || !mappings.fixed || !mappings.days) return;
   const allKeys = [...mappings.fixed, ...mappings.days];
   const signature = allKeys.join("|");
-  if (signature === lastKeysSignature) return; // déjà chargé, pas besoin de refaire l'appel
+  if (signature === lastKeysSignature) return;
 
   try {
     const colsMeta = await grist.docApi.fetchTable("_grist_Tables_column");
@@ -287,9 +334,7 @@ async function ensureColumnTypesLoaded(mappings) {
       typeByColId[colsMeta.colId[i]] = colsMeta.type[i];
     }
     columnTypesCache = {};
-    allKeys.forEach((key) => {
-      columnTypesCache[key] = typeByColId[key] || null;
-    });
+    allKeys.forEach((key) => { columnTypesCache[key] = typeByColId[key] || null; });
     lastKeysSignature = signature;
     columnTypesLoadError = false;
   } catch (err) {
@@ -304,18 +349,14 @@ function isGristList(value) {
   return Array.isArray(value) && value[0] === "L";
 }
 
-// Détection fiable basée sur ton propre système de nommage : le DERNIER chiffre
-// du nom de la colonne indique son type. Impair = Choix multiples, pair = texte.
-// Fonctionne quel que soit le nom réel (espace ou underscore), ex: "32 5", "31_3".
+// Ta convention : le DERNIER chiffre du nom de colonne indique le type
+// (impair = Choix multiples). Marche même avec des tirets ou un "$" devant.
 function isChoiceColByName(colId) {
   const match = String(colId).match(/(\d+)\s*$/);
-  if (!match) return null; // pas de chiffre trouvé à la fin -> on ne sait pas via le nom
+  if (!match) return null;
   return parseInt(match[1], 10) % 2 === 1;
 }
 
-// Détermine si une colonne est "Choix multiples", en priorité via son nom
-// (ta convention: dernier chiffre impair), avec les métadonnées Grist et la
-// valeur réelle en secours si jamais le nom ne suit pas le motif attendu.
 function isChoiceColumn(colId, colType, rawValue) {
   const byName = isChoiceColByName(colId);
   if (byName !== null) return byName;
@@ -343,7 +384,6 @@ function extractChoiceItems(rawValue) {
   return [];
 }
 
-// Formate une valeur de type Date/DateTime Grist (timestamp en secondes) en texte lisible
 function formatDateValue(rawValue) {
   if (typeof rawValue !== "number") return String(rawValue ?? "");
   const d = new Date(rawValue * 1000);
@@ -364,8 +404,7 @@ function render(records, mappings) {
   if (!mappings || !mappings.fixed || !mappings.days) {
     appEl.innerHTML =
       '<div id="empty-msg">⚙️ Configure d\'abord les colonnes : ouvre le panneau ' +
-      '"Colonnes requises" à droite du widget dans Grist, et assigne tes colonnes ' +
-      '"fixes" et "dates/tâches" dans le bon ordre.</div>';
+      '"Colonnes requises" à droite du widget dans Grist.</div>';
     statusEl.textContent = "";
     return;
   }
@@ -376,17 +415,12 @@ function render(records, mappings) {
   const expectedTotal = WEEK_GROUPS.reduce((a, w) => a + w.count, 0);
   if (dayKeys.length !== expectedTotal) {
     appEl.innerHTML =
-      `<div id="empty-msg">⚠️ Attendu ${expectedTotal} colonnes "dates/tâches" ` +
-      `(configuré dans WEEK_GROUPS), mais ${dayKeys.length} colonnes assignées ` +
-      `dans le panneau Grist. Vérifie ta sélection, ou ajuste WEEK_GROUPS dans le code.</div>`;
+      `<div id="empty-msg">⚠️ Attendu ${expectedTotal} colonnes "dates/tâches", ` +
+      `mais ${dayKeys.length} assignées. Vérifie ta sélection.</div>`;
     statusEl.textContent = "";
     return;
   }
 
-  // Type réel de chaque colonne, basé sur les métadonnées Grist (fiable),
-  // avec un filet de sécurité : si une cellule contient déjà une vraie liste
-  // Grist, on la traite comme Choix multiples même si la lecture des
-  // métadonnées a échoué.
   dayChoiceMap = {};
   dayKeys.forEach((key) => {
     dayChoiceMap[key] = isChoiceColumn(key, columnTypesCache[key], null);
@@ -411,7 +445,6 @@ function render(records, mappings) {
   });
   html += "</colgroup><thead><tr>";
 
-  // En-tête fusionné pour les colonnes fixes (Employé + Colonne 2)
   html += `<th class="fixed-header" colspan="${fixedKeys.length}">${escapeHtml(FIXED_MERGED_LABEL)}</th>`;
 
   weekKeyGroups.forEach((group) => {
@@ -430,7 +463,7 @@ function render(records, mappings) {
       const isFirstFixedCol = i === 0;
       const highlight =
         isFirstFixedCol && plainText.includes(MATERIEL_KEYWORD) ? " materiel-highlight" : "";
-      html += `<td class="editable${highlight}" data-row-id="${record.id}" data-col="${key}" data-is-list="false">${escapeHtml(plainText)}</td>`;
+      html += `<td class="editable${highlight}" data-row-id="${record.id}" data-col="${key}">${escapeHtml(plainText)}</td>`;
     });
 
     weekKeyGroups.forEach((group) => {
@@ -441,26 +474,20 @@ function render(records, mappings) {
         const isChoiceCol = isChoiceColumn(key, colType, rawValue);
         const isDateCol = !isChoiceCol && (colType === "Date" || (colType && colType.startsWith("DateTime")));
 
-        // Cas spécial : 1ère ligne d'une colonne Choix multiples = case "date".
-        // On l'affiche et on la modifie comme du texte simple, mais on l'enregistre
-        // quand même sous forme de liste à 1 élément pour rester compatible avec
-        // le type réel de la colonne (Choix multiples) côté Grist.
         if (isChoiceCol && isDateRow) {
           const dateText = extractChoiceItems(rawValue).join(", ") || String(rawValue ?? "");
           html += `<td class="editable date-cell" data-row-id="${record.id}" data-col="${key}" data-cell-type="date">${escapeHtml(dateText)}</td>`;
           return;
         }
 
-        let displayHtml;
         if (isChoiceCol) {
-          displayHtml = renderChips(extractChoiceItems(rawValue));
-        } else if (isDateCol) {
-          displayHtml = escapeHtml(formatDateValue(rawValue));
-        } else {
-          displayHtml = escapeHtml(rawValue ?? "");
+          const displayHtml = renderChips(extractChoiceItems(rawValue));
+          html += `<td class="choice-cell wk-${group.weekIndex}" data-row-id="${record.id}" data-col="${key}">${displayHtml}</td>`;
+          return;
         }
 
-        html += `<td class="editable wk-${group.weekIndex}" data-row-id="${record.id}" data-col="${key}" data-is-list="${isChoiceCol}">${displayHtml}</td>`;
+        const displayHtml = isDateCol ? escapeHtml(formatDateValue(rawValue)) : escapeHtml(rawValue ?? "");
+        html += `<td class="editable wk-${group.weekIndex}" data-row-id="${record.id}" data-col="${key}">${displayHtml}</td>`;
       });
     });
 
@@ -469,31 +496,26 @@ function render(records, mappings) {
 
   html += "</tbody></table>";
   appEl.innerHTML = html;
+
   const choiceColsCount = dayKeys.filter((k) => dayChoiceMap[k]).length;
   const diagPart = columnTypesLoadError
-    ? " ⚠️ Erreur de lecture des types de colonnes (regarde la console F12)"
+    ? " ⚠️ Erreur de lecture des types de colonnes (F12 pour la console)"
     : ` • ${choiceColsCount} colonne(s) Choix multiples détectée(s)`;
   statusEl.textContent = `${records.length} ligne(s) • ${WEEK_GROUPS.length} semaines (${fixedKeys.length + dayKeys.length} colonnes)${diagPart}`;
 
   attachEditHandlers();
+  attachChoiceHandlers();
   applyWeekVisibility();
 }
+
+// ============================================================
+// CASES TEXTE / DATE (édition directe)
+// ============================================================
 
 function attachEditHandlers() {
   document.querySelectorAll("td.editable").forEach((cell) => {
     cell.addEventListener("click", function onClick() {
       if (cell.getAttribute("contenteditable") === "true") return;
-      const cellType = cell.dataset.cellType;
-      const isList = cell.dataset.isList === "true";
-
-      if (cellType === "date") {
-        // Rien à transformer : la case affiche déjà du texte simple
-      } else if (isList) {
-        const rowId = cell.dataset.rowId;
-        const colId = cell.dataset.col;
-        const original = cellOriginalValues[`${rowId}_${colId}`];
-        cell.textContent = extractChoiceItems(original).join(", ");
-      }
       cell.setAttribute("contenteditable", "true");
       cell.focus();
       placeCaretAtEnd(cell);
@@ -507,76 +529,37 @@ function attachEditHandlers() {
       if (cell.dataset.cellType === "date") {
         await saveDateCell(rowId, colId, newValue, cell);
       } else {
-        await saveValue(rowId, colId, newValue, cell);
+        await saveTextValue(rowId, colId, newValue);
       }
     });
 
     cell.addEventListener("keydown", function onKeydown(e) {
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        cell.blur();
-      }
-      if (e.key === "Escape") {
-        cell.blur();
-      }
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); cell.blur(); }
+      if (e.key === "Escape") cell.blur();
     });
   });
 }
 
-// Sauvegarde une case "date" : garde le texte tel quel (pas de découpage par
-// virgule), mais l'enregistre sous forme de liste à 1 élément pour rester
-// compatible avec le type réel de la colonne (Choix multiples) dans Grist.
+async function saveTextValue(rowId, colId, newText) {
+  try {
+    await grist.selectedTable.update({ id: rowId, fields: { [colId]: newText } });
+    cellOriginalValues[`${rowId}_${colId}`] = newText;
+  } catch (err) {
+    console.error("Erreur d'écriture Grist:", err);
+    document.getElementById("status").textContent = "Erreur lors de l'enregistrement.";
+  }
+}
+
 async function saveDateCell(rowId, colId, newText, cellEl) {
   try {
     const trimmed = newText.trim();
     const valueToSend = trimmed.length > 0 ? ["L", trimmed] : ["L"];
-
-    await grist.selectedTable.update({
-      id: rowId,
-      fields: { [colId]: valueToSend },
-    });
-
+    await grist.selectedTable.update({ id: rowId, fields: { [colId]: valueToSend } });
     cellOriginalValues[`${rowId}_${colId}`] = valueToSend;
-    if (cellEl) {
-      cellEl.textContent = trimmed;
-    }
+    if (cellEl) cellEl.textContent = trimmed;
   } catch (err) {
     console.error("Erreur d'écriture Grist (case date):", err);
-    document.getElementById("status").textContent =
-      "Erreur lors de l'enregistrement — vérifie les droits d'accès du widget.";
-  }
-}
-
-async function saveValue(rowId, colId, newText, cellEl) {
-  try {
-    const originalValue = cellOriginalValues[`${rowId}_${colId}`];
-    const isList = isChoiceColumn(colId, columnTypesCache[colId], originalValue);
-    let valueToSend;
-
-    if (isList) {
-      const items = newText
-        .split(",")
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
-      valueToSend = ["L", ...items];
-    } else {
-      valueToSend = newText;
-    }
-
-    await grist.selectedTable.update({
-      id: rowId,
-      fields: { [colId]: valueToSend },
-    });
-
-    cellOriginalValues[`${rowId}_${colId}`] = valueToSend;
-
-    if (isList && cellEl) {
-      cellEl.innerHTML = renderChips(valueToSend.slice(1));
-    }
-  } catch (err) {
-    console.error("Erreur d'écriture Grist:", err);
-    document.getElementById("status").textContent =
-      "Erreur lors de l'enregistrement — vérifie les droits d'accès du widget.";
+    document.getElementById("status").textContent = "Erreur lors de l'enregistrement.";
   }
 }
 
@@ -588,6 +571,107 @@ function placeCaretAtEnd(el) {
   sel.removeAllRanges();
   sel.addRange(range);
 }
+
+// ============================================================
+// CASES CHOIX MULTIPLES — menu déroulant à cases à cocher colorées
+// ============================================================
+
+function attachChoiceHandlers() {
+  document.querySelectorAll("td.choice-cell").forEach((cell) => {
+    cell.addEventListener("click", () => openChoiceDropdown(cell));
+  });
+}
+
+function openChoiceDropdown(cell) {
+  document.querySelectorAll("td.choice-cell.dropdown-open").forEach((c) => c.classList.remove("dropdown-open"));
+
+  const dd = document.getElementById("choiceDropdown");
+  const rowId = cell.dataset.rowId;
+  const colId = cell.dataset.col;
+  activeDropdown = { rowId, colId };
+
+  const original = cellOriginalValues[`${rowId}_${colId}`];
+  const selected = new Set(extractChoiceItems(original));
+
+  dd.innerHTML = "";
+  Object.keys(CHOICE_COLORS).forEach((choice) => {
+    const color = CHOICE_COLORS[choice];
+    const label = document.createElement("label");
+    label.className = "choice-option";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = selected.has(choice);
+    checkbox.addEventListener("change", () => onChoiceToggle(choice, checkbox.checked));
+
+    const chip = document.createElement("span");
+    chip.className = "chip";
+    chip.style.background = color.bg;
+    chip.style.color = color.text;
+    if (color.border) chip.style.border = color.border;
+    chip.textContent = choice;
+
+    label.appendChild(checkbox);
+    label.appendChild(chip);
+    dd.appendChild(label);
+  });
+
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.className = "choice-dropdown-close";
+  closeBtn.textContent = "Fermer";
+  closeBtn.addEventListener("click", closeChoiceDropdown);
+  dd.appendChild(closeBtn);
+
+  const rect = cell.getBoundingClientRect();
+  const ddWidth = 190;
+  let left = rect.left;
+  if (left + ddWidth > window.innerWidth) left = window.innerWidth - ddWidth - 8;
+  dd.style.top = `${rect.bottom + 4}px`;
+  dd.style.left = `${left}px`;
+  dd.classList.add("open");
+  cell.classList.add("dropdown-open");
+}
+
+function closeChoiceDropdown() {
+  const dd = document.getElementById("choiceDropdown");
+  dd.classList.remove("open");
+  document.querySelectorAll("td.choice-cell.dropdown-open").forEach((c) => c.classList.remove("dropdown-open"));
+  activeDropdown = { rowId: null, colId: null };
+}
+
+async function onChoiceToggle(choice, isChecked) {
+  const { rowId, colId } = activeDropdown;
+  if (!rowId || !colId) return;
+
+  const original = cellOriginalValues[`${rowId}_${colId}`];
+  let items = extractChoiceItems(original);
+  if (isChecked) {
+    if (!items.includes(choice)) items.push(choice);
+  } else {
+    items = items.filter((i) => i !== choice);
+  }
+  const valueToSend = ["L", ...items];
+
+  try {
+    await grist.selectedTable.update({ id: Number(rowId), fields: { [colId]: valueToSend } });
+    cellOriginalValues[`${rowId}_${colId}`] = valueToSend;
+    const cell = document.querySelector(`td.choice-cell[data-row-id="${rowId}"][data-col="${colId}"]`);
+    if (cell) cell.innerHTML = renderChips(items);
+  } catch (err) {
+    console.error("Erreur d'écriture Grist:", err);
+    document.getElementById("status").textContent = "Erreur lors de l'enregistrement.";
+  }
+}
+
+// Ferme le menu si on clique en dehors
+document.addEventListener("click", (e) => {
+  const dd = document.getElementById("choiceDropdown");
+  if (!dd.classList.contains("open")) return;
+  if (dd.contains(e.target)) return;
+  if (e.target.closest && e.target.closest("td.choice-cell")) return;
+  closeChoiceDropdown();
+});
 
 function escapeHtml(str) {
   return String(str)
