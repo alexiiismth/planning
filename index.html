@@ -195,6 +195,7 @@ const hiddenWeeks = new Set();
 let dayChoiceMap = {};       // colId -> true si type réel Grist = ChoiceList
 let columnTypesCache = {};   // colId -> type réel Grist (ex: "ChoiceList", "Date", "Text")
 let lastKeysSignature = null;
+let columnTypesLoadError = false; // true si la lecture des métadonnées a échoué
 
 // ============================================================
 // BOUTONS "SEMAINE X"
@@ -290,8 +291,10 @@ async function ensureColumnTypesLoaded(mappings) {
       columnTypesCache[key] = typeByColId[key] || null;
     });
     lastKeysSignature = signature;
+    columnTypesLoadError = false;
   } catch (err) {
     console.error("Impossible de lire les types de colonnes:", err);
+    columnTypesLoadError = true;
   }
 }
 
@@ -362,7 +365,10 @@ function render(records, mappings) {
     return;
   }
 
-  // Type réel de chaque colonne, basé sur les métadonnées Grist (pas la position)
+  // Type réel de chaque colonne, basé sur les métadonnées Grist (fiable),
+  // avec un filet de sécurité : si une cellule contient déjà une vraie liste
+  // Grist, on la traite comme Choix multiples même si la lecture des
+  // métadonnées a échoué.
   dayChoiceMap = {};
   dayKeys.forEach((key) => {
     dayChoiceMap[key] = columnTypesCache[key] === "ChoiceList";
@@ -414,7 +420,7 @@ function render(records, mappings) {
         const rawValue = record[key];
         cellOriginalValues[`${record.id}_${key}`] = rawValue;
         const colType = columnTypesCache[key];
-        const isChoiceCol = colType === "ChoiceList";
+        const isChoiceCol = colType === "ChoiceList" || isGristList(rawValue);
         const isDateCol = colType === "Date" || (colType && colType.startsWith("DateTime"));
 
         // Cas spécial : 1ère ligne d'une colonne Choix multiples = case "date".
@@ -445,7 +451,11 @@ function render(records, mappings) {
 
   html += "</tbody></table>";
   appEl.innerHTML = html;
-  statusEl.textContent = `${records.length} ligne(s) • ${WEEK_GROUPS.length} semaines (${fixedKeys.length + dayKeys.length} colonnes)`;
+  const choiceColsCount = dayKeys.filter((k) => dayChoiceMap[k]).length;
+  const diagPart = columnTypesLoadError
+    ? " ⚠️ Erreur de lecture des types de colonnes (regarde la console F12)"
+    : ` • ${choiceColsCount} colonne(s) Choix multiples détectée(s)`;
+  statusEl.textContent = `${records.length} ligne(s) • ${WEEK_GROUPS.length} semaines (${fixedKeys.length + dayKeys.length} colonnes)${diagPart}`;
 
   attachEditHandlers();
   applyWeekVisibility();
@@ -521,7 +531,8 @@ async function saveDateCell(rowId, colId, newText, cellEl) {
 
 async function saveValue(rowId, colId, newText, cellEl) {
   try {
-    const isList = columnTypesCache[colId] === "ChoiceList";
+    const originalValue = cellOriginalValues[`${rowId}_${colId}`];
+    const isList = columnTypesCache[colId] === "ChoiceList" || isGristList(originalValue);
     let valueToSend;
 
     if (isList) {
