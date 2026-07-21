@@ -236,7 +236,7 @@ const WEEK_GROUPS = [
 ];
 
 const CHOICE_COLORS = {
-  "Absence":     { bg: "#e74c3c", text: "#ffffff" },
+  "Absences":    { bg: "#e74c3c", text: "#ffffff" },
   "Chantiers":   { bg: "#87ceeb", text: "#003049" },
   "Rapport":     { bg: "#2ecc71", text: "#053a1e" },
   "Réunion":     { bg: "#4a4a4a", text: "#ffffff" },
@@ -260,6 +260,7 @@ let columnTypesCache = {};
 let lastKeysSignature = null;
 let columnTypesLoadError = false;
 let activeDropdown = { rowId: null, colId: null };
+let dropdownPendingItems = []; // état local synchrone, évite les problèmes de timing entre coches rapides
 
 // ============================================================
 // BOUTONS "SEMAINE X"
@@ -592,6 +593,7 @@ function openChoiceDropdown(cell) {
 
   const original = cellOriginalValues[`${rowId}_${colId}`];
   const selected = new Set(extractChoiceItems(original));
+  dropdownPendingItems = extractChoiceItems(original); // copie de travail synchrone
 
   dd.innerHTML = "";
   Object.keys(CHOICE_COLORS).forEach((choice) => {
@@ -644,20 +646,23 @@ async function onChoiceToggle(choice, isChecked) {
   const { rowId, colId } = activeDropdown;
   if (!rowId || !colId) return;
 
-  const original = cellOriginalValues[`${rowId}_${colId}`];
-  let items = extractChoiceItems(original);
+  // Mise à jour SYNCHRONE de l'état partagé avant tout appel réseau,
+  // pour que chaque coche (même rapide) parte toujours de l'état le plus à jour.
   if (isChecked) {
-    if (!items.includes(choice)) items.push(choice);
+    if (!dropdownPendingItems.includes(choice)) dropdownPendingItems.push(choice);
   } else {
-    items = items.filter((i) => i !== choice);
+    dropdownPendingItems = dropdownPendingItems.filter((i) => i !== choice);
   }
-  const valueToSend = ["L", ...items];
+  const itemsSnapshot = [...dropdownPendingItems];
+  const valueToSend = ["L", ...itemsSnapshot];
+
+  // Affichage optimiste immédiat
+  const cell = document.querySelector(`td.choice-cell[data-row-id="${rowId}"][data-col="${colId}"]`);
+  if (cell) cell.innerHTML = renderChips(itemsSnapshot);
 
   try {
     await grist.selectedTable.update({ id: Number(rowId), fields: { [colId]: valueToSend } });
     cellOriginalValues[`${rowId}_${colId}`] = valueToSend;
-    const cell = document.querySelector(`td.choice-cell[data-row-id="${rowId}"][data-col="${colId}"]`);
-    if (cell) cell.innerHTML = renderChips(items);
   } catch (err) {
     console.error("Erreur d'écriture Grist:", err);
     document.getElementById("status").textContent = "Erreur lors de l'enregistrement.";
