@@ -268,6 +268,7 @@ let dropdownPendingItems = []; // état local synchrone, évite les problèmes d
 
 function buildWeekButtonsOnce() {
   const container = document.getElementById("weekButtons");
+  if (!container) return;
   container.innerHTML = "";
   WEEK_GROUPS.forEach((w, idx) => {
     const btn = document.createElement("button");
@@ -302,8 +303,6 @@ function updateWeekButtonStyles() {
     btn.classList.toggle("hidden-state", hiddenWeeks.has(idx));
   });
 }
-
-buildWeekButtonsOnce();
 
 // ============================================================
 // LOGIQUE DU WIDGET
@@ -692,6 +691,8 @@ function escapeHtml(str) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 }
+
+buildWeekButtonsOnce();
 </script>
 </body>
 </html>
