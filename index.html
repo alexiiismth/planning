@@ -1,3 +1,224 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Planning Août 2026 - Widget Grist</title>
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+<style>
+  :root {
+    --header-bg: #2c3e50;
+    --header-color: #ffffff;
+    --week-bg: #34495e;
+    --fixed-bg: #1a252f;
+    --border-color: #ddd;
+    --cell-hover: #f5f7fa;
+
+    --col1-width: 92px;
+    --col2-width: 186px;
+    --day-width: 111px;
+    --cell-min-height: 70px;
+    --cell-font-size: 13px;
+  }
+
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    margin: 0;
+    padding: 12px;
+    background: #fafafa;
+  }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    background: white;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    table-layout: fixed;
+  }
+
+  th, td {
+    border: 1px solid var(--border-color);
+    padding: 6px 8px;
+    text-align: left;
+    font-size: 12px;
+    vertical-align: top;
+  }
+
+  th.week-header {
+    background: var(--week-bg);
+    color: var(--header-color);
+    text-align: center;
+    font-weight: 600;
+    font-size: 13px;
+  }
+
+  th.fixed-header {
+    background: var(--fixed-bg);
+    color: var(--header-color);
+    text-align: center;
+  }
+
+  td.editable {
+    cursor: text;
+    min-height: var(--cell-min-height);
+    font-size: var(--cell-font-size);
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: break-word;
+  }
+
+  td.editable:hover {
+    background: var(--cell-hover);
+  }
+
+  td.editable[contenteditable="true"] {
+    outline: 2px solid #3498db;
+    background: #fffde7;
+    white-space: pre-wrap;
+  }
+
+  td.choice-cell {
+    cursor: pointer;
+    min-height: var(--cell-min-height);
+    font-size: var(--cell-font-size);
+    white-space: pre-wrap;
+  }
+
+  td.choice-cell:hover {
+    background: var(--cell-hover);
+  }
+
+  td.choice-cell.dropdown-open {
+    outline: 2px solid #3498db;
+    background: #fffde7;
+  }
+
+  td.materiel-highlight {
+    background: #d8b4fe !important;
+  }
+
+  td.date-cell {
+    background: #f0f0f0;
+    color: #333;
+    font-weight: 600;
+    text-align: center;
+  }
+
+  td.date-cell[contenteditable="true"] {
+    background: #fffde7;
+    color: #333;
+  }
+
+  .chip {
+    display: inline-block;
+    padding: 1px 6px;
+    margin: 1px 3px 1px 0;
+    border-radius: 4px;
+    font-size: 11px;
+    line-height: 1.5;
+  }
+
+  #status {
+    font-size: 12px;
+    color: #888;
+    margin-bottom: 8px;
+  }
+
+  #empty-msg {
+    padding: 20px;
+    text-align: center;
+    color: #888;
+  }
+
+  .scroll-wrap {
+    overflow-x: auto;
+  }
+
+  .week-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .week-btn {
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 2px solid var(--week-bg);
+    background: var(--week-bg);
+    color: white;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .week-btn.hidden-state {
+    background: white;
+    color: var(--week-bg);
+  }
+
+  /* ---- Menu déroulant Choix multiples ---- */
+  .choice-dropdown {
+    position: fixed;
+    background: white;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.2);
+    padding: 8px;
+    z-index: 1000;
+    display: none;
+    min-width: 170px;
+    max-height: 260px;
+    overflow-y: auto;
+  }
+
+  .choice-dropdown.open {
+    display: block;
+  }
+
+  .choice-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 6px;
+    cursor: pointer;
+    border-radius: 5px;
+  }
+
+  .choice-option:hover {
+    background: #f0f2f5;
+  }
+
+  .choice-option input {
+    cursor: pointer;
+  }
+
+  .choice-dropdown-close {
+    display: block;
+    width: 100%;
+    margin-top: 6px;
+    padding: 5px;
+    border: none;
+    border-radius: 5px;
+    background: var(--week-bg);
+    color: white;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+
+<div id="status">Chargement…</div>
+
+<div class="week-buttons" id="weekButtons"></div>
+
+<div class="scroll-wrap">
+  <div id="app"></div>
+</div>
+
+<div class="choice-dropdown" id="choiceDropdown"></div>
+
 <script>
 // ============================================================
 // CONFIGURATION
@@ -5,7 +226,6 @@
 
 const FIXED_MERGED_LABEL = "Employé";
 
-// Configuration pour Août 2026 (62 colonnes au total : 31 jours x 2 demi-journées)
 const WEEK_GROUPS = [
   { label: "Semaine 31", count: 4 },
   { label: "Semaine 32", count: 14 },
@@ -16,15 +236,15 @@ const WEEK_GROUPS = [
 ];
 
 const CHOICE_COLORS = {
-  "Absences":      { bg: "#e74c3c", text: "#ffffff" },
-  "Chantiers":     { bg: "#87ceeb", text: "#003049" },
-  "Rapport":       { bg: "#2ecc71", text: "#053a1e" },
-  "Réunion":       { bg: "#4a4a4a", text: "#ffffff" },
+  "Absences":    { bg: "#e74c3c", text: "#ffffff" },
+  "Chantiers":   { bg: "#87ceeb", text: "#003049" },
+  "Rapport":     { bg: "#2ecc71", text: "#053a1e" },
+  "Réunion":     { bg: "#4a4a4a", text: "#ffffff" },
   "Administratif": { bg: "#e0e0e0", text: "#333333" },
-  "Essai labo":    { bg: "#f1c40f", text: "#4a3b00" },
-  "Recherche":     { bg: "#1a3a6e", text: "#ffffff" },
-  "Formation":     { bg: "#ffc0cb", text: "#5c0011" },
-  "Grève":         { bg: "#ffffff", text: "#333333", border: "1px solid #999" },
+  "Essai labo":  { bg: "#f1c40f", text: "#4a3b00" },
+  "Recherche":   { bg: "#1a3a6e", text: "#ffffff" },
+  "Formation":   { bg: "#ffc0cb", text: "#5c0011" },
+  "Grève":       { bg: "#ffffff", text: "#333333", border: "1px solid #999" },
 };
 
 const MATERIEL_KEYWORD = "Matériels";
@@ -40,7 +260,7 @@ let columnTypesCache = {};
 let lastKeysSignature = null;
 let columnTypesLoadError = false;
 let activeDropdown = { rowId: null, colId: null };
-let dropdownPendingItems = [];
+let dropdownPendingItems = []; // état local synchrone, évite les problèmes de timing entre coches rapides
 
 // ============================================================
 // BOUTONS "SEMAINE X"
@@ -83,11 +303,6 @@ function updateWeekButtonStyles() {
     btn.classList.toggle("hidden-state", hiddenWeeks.has(idx));
   });
 }
-
-// Initialisation sécurisée une fois le DOM chargé
-document.addEventListener("DOMContentLoaded", () => {
-  buildWeekButtonsOnce();
-});
 
 // ============================================================
 // LOGIQUE DU WIDGET
@@ -134,6 +349,8 @@ function isGristList(value) {
   return Array.isArray(value) && value[0] === "L";
 }
 
+// Ta convention : le DERNIER chiffre du nom de colonne indique le type
+// (impair = Choix multiples). Marche même avec des tirets ou un "$" devant.
 function isChoiceColByName(colId) {
   const match = String(colId).match(/(\d+)\s*$/);
   if (!match) return null;
@@ -161,7 +378,10 @@ function renderChips(items) {
 
 function extractChoiceItems(rawValue) {
   if (Array.isArray(rawValue)) {
+    // Format standard Grist pour les listes : ["L", "Choix1", "Choix2", ...]
     if (rawValue[0] === "L") return rawValue.slice(1);
+    // Filet de sécurité : si jamais Grist renvoie directement un tableau de
+    // choix sans la balise "L", on le prend quand même tel quel.
     return rawValue.filter((v) => typeof v === "string");
   }
   if (typeof rawValue === "string" && rawValue.trim().length > 0) {
@@ -198,27 +418,22 @@ function render(records, mappings) {
   const fixedKeys = mappings.fixed;
   const dayKeys = mappings.days;
 
+  const expectedTotal = WEEK_GROUPS.reduce((a, w) => a + w.count, 0);
+  if (dayKeys.length !== expectedTotal) {
+    console.warn(`Attention: ${dayKeys.length} colonnes assignées sur les ${expectedTotal} attendues.`);
+  }
+
   dayChoiceMap = {};
   dayKeys.forEach((key) => {
     dayChoiceMap[key] = isChoiceColumn(key, columnTypesCache[key], null);
   });
 
-  // Découpage dynamique sécurisé des colonnes selon WEEK_GROUPS
   let cursor = 0;
-  const weekKeyGroups = [];
-  WEEK_GROUPS.forEach((w, idx) => {
-    if (cursor < dayKeys.length) {
-      const keys = dayKeys.slice(cursor, cursor + w.count);
-      cursor += w.count;
-      weekKeyGroups.push({ label: w.label, keys, weekIndex: idx });
-    }
+  const weekKeyGroups = WEEK_GROUPS.map((w, idx) => {
+    const keys = dayKeys.slice(cursor, cursor + w.count);
+    cursor += w.count;
+    return { label: w.label, keys, weekIndex: idx };
   });
-
-  // Si des colonnes restent en surplus non assignées aux semaines :
-  if (cursor < dayKeys.length) {
-    const extraKeys = dayKeys.slice(cursor);
-    weekKeyGroups.push({ label: "Autres", keys: extraKeys, weekIndex: 99 });
-  }
 
   let html = "<table><colgroup>";
   fixedKeys.forEach((key, i) => {
@@ -360,7 +575,7 @@ function placeCaretAtEnd(el) {
 }
 
 // ============================================================
-// CASES CHOIX MULTIPLES
+// CASES CHOIX MULTIPLES — menu déroulant à cases à cocher colorées
 // ============================================================
 
 function attachChoiceHandlers() {
@@ -378,8 +593,9 @@ function openChoiceDropdown(cell) {
   activeDropdown = { rowId, colId };
 
   const original = cellOriginalValues[`${rowId}_${colId}`];
+  console.log("Valeur brute Grist pour cette case:", original);
   const selected = new Set(extractChoiceItems(original));
-  dropdownPendingItems = extractChoiceItems(original);
+  dropdownPendingItems = extractChoiceItems(original); // copie de travail synchrone
 
   dd.innerHTML = "";
   Object.keys(CHOICE_COLORS).forEach((choice) => {
@@ -432,6 +648,8 @@ async function onChoiceToggle(choice, isChecked) {
   const { rowId, colId } = activeDropdown;
   if (!rowId || !colId) return;
 
+  // Mise à jour SYNCHRONE de l'état partagé avant tout appel réseau,
+  // pour que chaque coche (même rapide) parte toujours de l'état le plus à jour.
   if (isChecked) {
     if (!dropdownPendingItems.includes(choice)) dropdownPendingItems.push(choice);
   } else {
@@ -440,6 +658,7 @@ async function onChoiceToggle(choice, isChecked) {
   const itemsSnapshot = [...dropdownPendingItems];
   const valueToSend = ["L", ...itemsSnapshot];
 
+  // Affichage optimiste immédiat
   const cell = document.querySelector(`td.choice-cell[data-row-id="${rowId}"][data-col="${colId}"]`);
   if (cell) cell.innerHTML = renderChips(itemsSnapshot);
 
@@ -452,6 +671,7 @@ async function onChoiceToggle(choice, isChecked) {
   }
 }
 
+// Ferme le menu si on clique en dehors
 document.addEventListener("click", (e) => {
   const dd = document.getElementById("choiceDropdown");
   if (!dd.classList.contains("open")) return;
@@ -467,4 +687,8 @@ function escapeHtml(str) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 }
+
+buildWeekButtonsOnce();
 </script>
+</body>
+</html>
