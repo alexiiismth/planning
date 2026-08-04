@@ -332,7 +332,22 @@ function getISOWeekNumber(date) {
 // héritent de la semaine de la dernière colonne de date rencontrée.
 function findFirstDateInColumn(records, key) {
   for (let r = 0; r < records.length; r++) {
-    const d = parseFrenchDateText(records[r][key]);
+    const d = parseFrenchDateFromValue(records[r][key]);
+    if (d) return d;
+  }
+  return null;
+}
+
+// Les colonnes de dates peuvent être du texte simple ("01/08/2026") ou des
+// ChoiceList où la date est stockée comme un des "choix" (ex: ["01/08/2026"]
+// ou ["L", "01/08/2026"]). On gère les deux cas en normalisant d'abord la
+// valeur en liste de chaînes via extractChoiceItems, puis en essayant de
+// parser chaque élément.
+function parseFrenchDateFromValue(value) {
+  if (typeof value === "string") return parseFrenchDateText(value);
+  const items = extractChoiceItems(value);
+  for (let i = 0; i < items.length; i++) {
+    const d = parseFrenchDateText(items[i]);
     if (d) return d;
   }
   return null;
