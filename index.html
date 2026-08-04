@@ -274,14 +274,11 @@
 
 const FIXED_MERGED_LABEL = "Employé";
 
-const WEEK_GROUPS = [
-  { label: "Semaine 31", count: 4 },
-  { label: "Semaine 32", count: 14 },
-  { label: "Semaine 33", count: 14 },
-  { label: "Semaine 34", count: 14 },
-  { label: "Semaine 35", count: 14 },
-  { label: "Semaine 36", count: 2 },
-];
+// Les groupes de semaines ne sont plus codés en dur : ils sont calculés
+// automatiquement (voir computeWeekGroups) à partir de la date réelle de la
+// TOUTE PREMIÈRE colonne de jours (première ligne du tableau), en supposant
+// que chaque colonne de jour suivante représente le jour calendaire suivant.
+// Un seul code sert donc pour tous les mois.
 
 const CHOICE_COLORS = {
   "Absences":    { bg: "#e74c3c", text: "#ffffff" },
@@ -302,56 +299,126 @@ const FREEZE_FIRST_ROW_AS_DATE = true;
 // ÉTAT PERSISTANT
 // ============================================================
 
-const hiddenWeeks = new Set();
+const hiddenWeeks = new Set(); // contient des numéros de semaine ISO (stables d'un rendu à l'autre)
 let dayChoiceMap = {};
 let columnTypesCache = {};
 let lastKeysSignature = null;
 let columnTypesLoadError = false;
 let activeDropdown = { rowId: null, colId: null };
 let dropdownPendingItems = []; // état local synchrone, évite les problèmes de timing entre coches rapides
+let currentWeekGroups = [];
+let lastWeekGroupsSignature = null;
+
+// ============================================================
+// CALCUL DYNAMIQUE DES SEMAINES (à partir des vraies dates)
+// ============================================================
+
+// Numéro de semaine ISO 8601 (celui utilisé en France : lundi = début de semaine)
+function getISOWeekNumber(date) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = (d.getUTCDay() + 6) % 7; // lundi = 0
+  d.setUTCDate(d.getUTCDate() - dayNum + 3);
+  const firstThursday = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+  const diff = d - firstThursday;
+  return 1 + Math.round(diff / (7 * 24 * 3600 * 1000));
+}
+
+// Dans dayKeys, les colonnes de DATE sont celles en position PAIRE
+// (index 0, 2, 4, ... = 3e, 5e, 7e... colonne du tableau), la colonne
+// suivante (impaire) étant la colonne "tâche" du même jour et hérite donc
+// de la même semaine que sa colonne de date associée.
+function isDateColPosition(index) {
+  return index % 2 === 0;
+}
+
+// Ces colonnes de date sont de simples colonnes TEXTE (pas le type Date de
+// Grist) où le format saisi est "JJ/MM/AAAA" (ex: "01/08/2026").
+function parseFrenchDateText(value) {
+  if (typeof value !== "string") return null;
+  const m = value.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!m) return null;
+  const day = parseInt(m[1], 10);
+  const month = parseInt(m[2], 10);
+  const year = parseInt(m[3], 10);
+  const d = new Date(year, month - 1, day);
+  // Rejette les dates invalides que JS "corrige" silencieusement (ex: 31/02)
+  if (d.getFullYear() !== year || d.getMonth() !== month - 1 || d.getDate() !== day) return null;
+  return d;
+}
+
+// Lit la vraie date (texte "JJ/MM/AAAA") de chaque colonne de date et
+// regroupe les colonnes consécutives par semaine ISO.
+// Retourne null si une date n'a pas pu être lue/parsée quand on en a besoin,
+// auquel cas render() affichera un message d'erreur explicite.
+function computeWeekGroups(records, dayKeys) {
+  if (!records || records.length === 0 || dayKeys.length === 0) return null;
+  const dateRow = records[0];
+
+  const groups = [];
+  let currentGroup = null;
+  let currentWeekNum = null;
+
+  for (let i = 0; i < dayKeys.length; i++) {
+    const key = dayKeys[i];
+
+    if (isDateColPosition(i)) {
+      const d = parseFrenchDateText(dateRow[key]);
+      if (!d) return null; // date manquante/mal formatée sur une colonne de date
+      currentWeekNum = getISOWeekNumber(d);
+    }
+
+    if (currentWeekNum === null) return null; // la 1ère colonne n'était pas une colonne de date exploitable
+
+    if (!currentGroup || currentGroup.weekNum !== currentWeekNum) {
+      currentGroup = { weekNum: currentWeekNum, label: `Semaine ${currentWeekNum}`, keys: [] };
+      groups.push(currentGroup);
+    }
+    currentGroup.keys.push(key);
+  }
+  groups.forEach((g, idx) => { g.weekIndex = idx; });
+  return groups;
+}
 
 // ============================================================
 // BOUTONS "SEMAINE X"
 // ============================================================
 
-function buildWeekButtonsOnce() {
+function buildWeekButtons(groups) {
   const container = document.getElementById("weekButtons");
   container.innerHTML = "";
-  WEEK_GROUPS.forEach((w, idx) => {
+  groups.forEach((g) => {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "week-btn";
-    btn.textContent = w.label;
-    btn.dataset.weekIndex = idx;
-    btn.addEventListener("click", () => toggleWeek(idx));
+    btn.textContent = g.label;
+    btn.dataset.weekNum = g.weekNum;
+    btn.addEventListener("click", () => toggleWeek(g.weekNum));
     container.appendChild(btn);
   });
   updateWeekButtonStyles();
 }
 
-function toggleWeek(idx) {
-  if (hiddenWeeks.has(idx)) hiddenWeeks.delete(idx);
-  else hiddenWeeks.add(idx);
-  applyWeekVisibility();
+function toggleWeek(weekNum) {
+  if (hiddenWeeks.has(weekNum)) hiddenWeeks.delete(weekNum);
+  else hiddenWeeks.add(weekNum);
+  applyWeekVisibility(currentWeekGroups);
   updateWeekButtonStyles();
 }
 
-function applyWeekVisibility() {
-  WEEK_GROUPS.forEach((w, idx) => {
-    const cols = document.querySelectorAll(`col.wk-${idx}`);
-    const shouldHide = hiddenWeeks.has(idx);
+function applyWeekVisibility(groups) {
+  groups.forEach((g) => {
+    const cols = document.querySelectorAll(`col.wk-${g.weekIndex}`);
+    const shouldHide = hiddenWeeks.has(g.weekNum);
     cols.forEach((c) => { c.style.visibility = shouldHide ? "collapse" : ""; });
   });
 }
 
 function updateWeekButtonStyles() {
   document.querySelectorAll(".week-btn").forEach((btn) => {
-    const idx = Number(btn.dataset.weekIndex);
-    btn.classList.toggle("hidden-state", hiddenWeeks.has(idx));
+    const weekNum = Number(btn.dataset.weekNum);
+    btn.classList.toggle("hidden-state", hiddenWeeks.has(weekNum));
   });
 }
-
-buildWeekButtonsOnce();
 
 // ============================================================
 // LOGIQUE DU WIDGET
@@ -499,25 +566,20 @@ function render(records, mappings) {
   const fixedKeys = mappings.fixed;
   const dayKeys = mappings.days;
 
-  const expectedTotal = WEEK_GROUPS.reduce((a, w) => a + w.count, 0);
-  if (dayKeys.length !== expectedTotal) {
+  const weekKeyGroups = computeWeekGroups(records, dayKeys);
+  if (!weekKeyGroups) {
     appEl.innerHTML =
-      `<div id="empty-msg">⚠️ Attendu ${expectedTotal} colonnes "dates/tâches", ` +
-      `mais ${dayKeys.length} assignées. Vérifie ta sélection.</div>`;
+      `<div id="empty-msg">⚠️ Impossible de déterminer les semaines : chaque colonne ` +
+      `de date (3e, 5e, 7e... colonne du tableau) doit contenir un texte au format ` +
+      `JJ/MM/AAAA (ex: "01/08/2026") sur la première ligne du tableau.</div>`;
     statusEl.textContent = "";
     return;
   }
+  currentWeekGroups = weekKeyGroups;
 
   dayChoiceMap = {};
   dayKeys.forEach((key) => {
     dayChoiceMap[key] = isChoiceColumn(key, columnTypesCache[key], null);
-  });
-
-  let cursor = 0;
-  const weekKeyGroups = WEEK_GROUPS.map((w, idx) => {
-    const keys = dayKeys.slice(cursor, cursor + w.count);
-    cursor += w.count;
-    return { label: w.label, keys, weekIndex: idx };
   });
 
   let html = "<table><colgroup>";
@@ -588,11 +650,19 @@ function render(records, mappings) {
   const diagPart = columnTypesLoadError
     ? " ⚠️ Erreur de lecture des types de colonnes (F12 pour la console)"
     : ` • ${choiceColsCount} colonne(s) Choix multiples détectée(s)`;
-  statusEl.textContent = `${records.length} ligne(s) • ${WEEK_GROUPS.length} semaines (${fixedKeys.length + dayKeys.length} colonnes)${diagPart}`;
+  statusEl.textContent = `${records.length} ligne(s) • ${weekKeyGroups.length} semaines (${fixedKeys.length + dayKeys.length} colonnes)${diagPart}`;
+
+  // Ne reconstruit les boutons que si la liste des semaines a changé
+  // (évite de perdre l'état visuel des boutons à chaque petit rendu).
+  const weekSignature = weekKeyGroups.map((g) => g.weekNum).join("|");
+  if (weekSignature !== lastWeekGroupsSignature) {
+    buildWeekButtons(weekKeyGroups);
+    lastWeekGroupsSignature = weekSignature;
+  }
 
   attachEditHandlers();
   attachChoiceHandlers();
-  applyWeekVisibility();
+  applyWeekVisibility(weekKeyGroups);
 }
 
 // ============================================================
