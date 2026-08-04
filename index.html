@@ -323,12 +323,19 @@ function getISOWeekNumber(date) {
   return 1 + Math.round(diff / (7 * 24 * 3600 * 1000));
 }
 
-// Dans dayKeys, les colonnes de DATE sont celles en position PAIRE
-// (index 0, 2, 4, ... = 3e, 5e, 7e... colonne du tableau), la colonne
-// suivante (impaire) étant la colonne "tâche" du même jour et hérite donc
-// de la même semaine que sa colonne de date associée.
-function isDateColPosition(index) {
-  return index % 2 === 0;
+// On ne se fie plus à la POSITION de la colonne (paire/impaire), car l'ordre
+// renvoyé par Grist pour les colonnes "days" ne correspond pas forcément à
+// l'ordre choisi dans le volet de droite. À la place, on regarde le CONTENU
+// de chaque colonne : une colonne est une "colonne de date" si au moins une
+// de ses cases contient un texte au format JJ/MM/AAAA, peu importe la ligne.
+// Les autres colonnes (sans aucune date) sont des colonnes "tâche" qui
+// héritent de la semaine de la dernière colonne de date rencontrée.
+function findFirstDateInColumn(records, key) {
+  for (let r = 0; r < records.length; r++) {
+    const d = parseFrenchDateText(records[r][key]);
+    if (d) return d;
+  }
+  return null;
 }
 
 // Ces colonnes de date sont de simples colonnes TEXTE (pas le type Date de
@@ -360,20 +367,15 @@ function computeWeekGroups(records, dayKeys) {
   for (let i = 0; i < dayKeys.length; i++) {
     const key = dayKeys[i];
 
-    if (isDateColPosition(i)) {
-      // On ne regarde plus uniquement la 1ère ligne : certaines colonnes n'ont
-      // une date valide que sur une seule case, peu importe la ligne. On
-      // parcourt donc toute la colonne et on prend la 1ère date exploitable.
-      let d = null;
-      for (let r = 0; r < records.length; r++) {
-        d = parseFrenchDateText(records[r][key]);
-        if (d) break;
-      }
-      if (!d) return null; // aucune date valide trouvée dans toute la colonne
+    // Cette colonne contient-elle une vraie date quelque part ? Si oui, elle
+    // définit la semaine courante. Sinon, c'est une colonne "tâche" qui
+    // hérite de la semaine de la dernière colonne de date trouvée.
+    const d = findFirstDateInColumn(records, key);
+    if (d) {
       currentWeekNum = getISOWeekNumber(d);
     }
 
-    if (currentWeekNum === null) return null; // la 1ère colonne n'était pas une colonne de date exploitable
+    if (currentWeekNum === null) return null; // aucune colonne de date exploitable trouvée avant celle-ci
 
     if (!currentGroup || currentGroup.weekNum !== currentWeekNum) {
       currentGroup = { weekNum: currentWeekNum, label: `Semaine ${currentWeekNum}`, keys: [] };
@@ -575,9 +577,10 @@ function render(records, mappings) {
   const weekKeyGroups = computeWeekGroups(records, dayKeys);
   if (!weekKeyGroups) {
     appEl.innerHTML =
-      `<div id="empty-msg">⚠️ Impossible de déterminer les semaines : chaque colonne ` +
-      `de date (3e, 5e, 7e... colonne du tableau) doit contenir au moins une case ` +
-      `(n'importe quelle ligne) avec un texte au format JJ/MM/AAAA (ex: "01/08/2026").</div>`;
+      `<div id="empty-msg">⚠️ Impossible de déterminer les semaines : il faut qu'au moins ` +
+      `une des colonnes de jours contienne, quelque part, un texte au format ` +
+      `JJ/MM/AAAA (ex: "01/08/2026"), et qu'elle soit avant les colonnes tâches ` +
+      `qui doivent en dépendre.</div>`;
     statusEl.textContent = "";
     return;
   }
