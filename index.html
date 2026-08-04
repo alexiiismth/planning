@@ -3,7 +3,55 @@
 <head>
 <meta charset="UTF-8">
 <title>Planning Août 2026 - Widget Grist</title>
-<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+<script>
+  // ============================================================
+  // GARDE-FOU : affiche toujours un message lisible en cas de
+  // problème, au lieu de laisser la page blanche sans explication.
+  // ============================================================
+  function showFatalError(title, detail) {
+    var box = document.getElementById("fatal-error-box");
+    if (!box) {
+      box = document.createElement("div");
+      box.id = "fatal-error-box";
+      box.style.cssText =
+        "font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;" +
+        "background:#fdecea;border:1px solid #f5c2c0;color:#611a15;" +
+        "padding:14px 16px;margin:12px;border-radius:8px;white-space:pre-wrap;" +
+        "font-size:13px;line-height:1.5;";
+      document.body.prepend(box);
+    }
+    box.textContent = "⚠️ " + title + (detail ? "\n" + detail : "");
+  }
+
+  window.addEventListener("error", function (e) {
+    showFatalError(
+      "Erreur JavaScript : " + (e.message || "erreur inconnue"),
+      (e.filename ? e.filename + ":" + e.lineno + ":" + e.colno : "")
+    );
+  });
+
+  window.addEventListener("unhandledrejection", function (e) {
+    var reason = e.reason;
+    var msg = reason && reason.message ? reason.message : String(reason);
+    showFatalError("Erreur asynchrone (promesse non gérée) : " + msg);
+  });
+
+  // Si le script Grist n'a pas fini de se charger après 10s, l'API
+  // n'est probablement pas accessible (réseau, CDN bloqué, etc.).
+  var __gristApiTimeout = setTimeout(function () {
+    if (typeof grist === "undefined") {
+      showFatalError(
+        "L'API Grist (grist-plugin-api.js) n'a pas pu être chargée.",
+        "Vérifie ta connexion réseau ou si docs.getgrist.com est accessible. " +
+        "Le widget ne peut pas fonctionner sans ce script."
+      );
+    }
+  }, 10000);
+</script>
+<script
+  src="https://docs.getgrist.com/grist-plugin-api.js"
+  onerror="showFatalError('Impossible de charger grist-plugin-api.js (CDN injoignable).', 'Vérifie ta connexion internet ou si docs.getgrist.com est bloqué par le réseau/pare-feu.');"
+></script>
 <style>
   :root {
     --header-bg: #2c3e50;
@@ -268,7 +316,6 @@ let dropdownPendingItems = []; // état local synchrone, évite les problèmes d
 
 function buildWeekButtonsOnce() {
   const container = document.getElementById("weekButtons");
-  if (!container) return;
   container.innerHTML = "";
   WEEK_GROUPS.forEach((w, idx) => {
     const btn = document.createElement("button");
@@ -304,22 +351,56 @@ function updateWeekButtonStyles() {
   });
 }
 
+buildWeekButtonsOnce();
+
 // ============================================================
 // LOGIQUE DU WIDGET
 // ============================================================
 
-grist.ready({
-  requiredAccess: "full",
-  columns: [
-    { name: "fixed", title: "Colonnes fixes (Employé, etc.) — dans l'ordre", type: "Any", allowMultiple: true },
-    { name: "days", title: "Colonnes de dates/tâches — dans l'ordre exact du tableau", type: "Any", allowMultiple: true },
-  ],
-});
+try {
+  clearTimeout(__gristApiTimeout);
 
-grist.onRecords(async (records, mappings) => {
-  await ensureColumnTypesLoaded(mappings);
-  render(records, mappings);
-});
+  grist.ready({
+    requiredAccess: "full",
+    columns: [
+      { name: "fixed", title: "Colonnes fixes (Employé, etc.) — dans l'ordre", type: "Any", allowMultiple: true },
+      { name: "days", title: "Colonnes de dates/tâches — dans l'ordre exact du tableau", type: "Any", allowMultiple: true },
+    ],
+  });
+
+  // Si onRecords ne s'est jamais déclenché après 10s, Grist n'a
+  // probablement pas pu établir la communication avec le widget
+  // (config des colonnes invalide, widget non lié à une table, etc.)
+  let __receivedFirstRecords = false;
+  setTimeout(() => {
+    if (!__receivedFirstRecords) {
+      showFatalError(
+        "Aucune donnée reçue de Grist après 10 secondes.",
+        "Vérifie dans le panneau du widget que les colonnes 'fixed' et 'days' " +
+        "sont bien configurées, et que le widget est rattaché à la bonne table/vue."
+      );
+    }
+  }, 10000);
+
+  grist.onRecords(async (records, mappings) => {
+    __receivedFirstRecords = true;
+    try {
+      await ensureColumnTypesLoaded(mappings);
+      render(records, mappings);
+    } catch (err) {
+      console.error("Erreur pendant le rendu du widget:", err);
+      showFatalError(
+        "Erreur pendant l'affichage du tableau : " + (err && err.message ? err.message : String(err)),
+        err && err.stack ? err.stack : ""
+      );
+    }
+  });
+} catch (err) {
+  console.error("Erreur à l'initialisation du widget Grist:", err);
+  showFatalError(
+    "Erreur à l'initialisation du widget (grist.ready) : " + (err && err.message ? err.message : String(err))
+  );
+}
 
 async function ensureColumnTypesLoaded(mappings) {
   if (!mappings || !mappings.fixed || !mappings.days) return;
@@ -420,7 +501,11 @@ function render(records, mappings) {
 
   const expectedTotal = WEEK_GROUPS.reduce((a, w) => a + w.count, 0);
   if (dayKeys.length !== expectedTotal) {
-    console.warn(`Attention: ${dayKeys.length} colonnes assignées sur les ${expectedTotal} attendues.`);
+    appEl.innerHTML =
+      `<div id="empty-msg">⚠️ Attendu ${expectedTotal} colonnes "dates/tâches", ` +
+      `mais ${dayKeys.length} assignées. Vérifie ta sélection.</div>`;
+    statusEl.textContent = "";
+    return;
   }
 
   dayChoiceMap = {};
@@ -687,8 +772,6 @@ function escapeHtml(str) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 }
-
-buildWeekButtonsOnce();
 </script>
 </body>
 </html>
