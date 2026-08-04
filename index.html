@@ -338,6 +338,41 @@ function findFirstDateInColumn(records, key) {
   return null;
 }
 
+// Certains mois ont moins de 31 jours (ex: septembre = 30). Le tableau étant
+// structuré sur un gabarit fixe (souvent jusqu'à 31 jours), les colonnes des
+// jours qui n'existent pas dans le mois en cours n'ont AUCUNE date (puisque
+// personne n'a pu saisir de date pour un jour qui n'existe pas). On regroupe
+// donc les colonnes par "jour" (chaque colonne contenant une vraie date
+// démarre un nouveau jour, les colonnes suivantes sans date lui appartiennent),
+// puis, si le tout dernier groupe est plus grand que la taille normale d'un
+// jour (car il a absorbé les jours fantômes qui suivent), on le tronque à la
+// taille normale — ce qui supprime bien les colonnes des jours inexistants.
+function trimPhantomTrailingDayColumns(records, dayKeys) {
+  if (!dayKeys || dayKeys.length === 0) return dayKeys;
+
+  const chunks = [];
+  let current = null;
+  dayKeys.forEach((key) => {
+    const hasDate = !!findFirstDateInColumn(records, key);
+    if (hasDate || !current) {
+      current = [key];
+      chunks.push(current);
+    } else {
+      current.push(key);
+    }
+  });
+
+  if (chunks.length <= 1) return dayKeys;
+
+  const typicalSize = chunks[0].length;
+  const lastChunk = chunks[chunks.length - 1];
+  if (lastChunk.length > typicalSize) {
+    chunks[chunks.length - 1] = lastChunk.slice(0, typicalSize);
+  }
+
+  return chunks.flat();
+}
+
 // Les colonnes de dates peuvent être du texte simple ("01/08/2026") ou des
 // ChoiceList où la date est stockée comme un des "choix" (ex: ["01/08/2026"]
 // ou ["L", "01/08/2026"]). On gère les deux cas en normalisant d'abord la
@@ -625,7 +660,7 @@ function render(records, mappings) {
   }
 
   const fixedKeys = mappings.fixed;
-  const dayKeys = mappings.days;
+  const dayKeys = trimPhantomTrailingDayColumns(records, mappings.days);
 
   const weekKeyGroups = computeWeekGroups(records, dayKeys);
   if (!weekKeyGroups) {
