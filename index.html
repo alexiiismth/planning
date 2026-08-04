@@ -64,8 +64,6 @@
     --col1-width: 92px;
     --col2-width: 186px;
     --day-width: 70px;
-    --weekend-day-width: 28px;
-    --weekend-bg: #d9d9d9;
     --cell-min-height: 70px;
     --cell-font-size: 12px;
   }
@@ -144,14 +142,6 @@
 
   td.materiel-highlight {
     background: #d8b4fe !important;
-  }
-
-  td.weekend-cell {
-    background: var(--weekend-bg);
-  }
-
-  td.weekend-cell:hover {
-    background: #cccccc;
   }
 
   td.date-cell {
@@ -695,8 +685,9 @@ function render(records, mappings) {
   }
 
   const fixedKeys = mappings.fixed;
-  const dayKeys = trimPhantomTrailingDayColumns(records, mappings.days);
-  const weekendDayKeys = computeWeekendKeySet(records, dayKeys);
+  const dayKeysWithWeekends = trimPhantomTrailingDayColumns(records, mappings.days);
+  const weekendDayKeys = computeWeekendKeySet(records, dayKeysWithWeekends);
+  const dayKeys = dayKeysWithWeekends.filter((key) => !weekendDayKeys.has(key));
 
   const weekKeyGroups = computeWeekGroups(records, dayKeys);
   if (!weekKeyGroups) {
@@ -717,9 +708,8 @@ function render(records, mappings) {
     html += `<col style="width:${widthVar};">`;
   });
   weekKeyGroups.forEach((group) => {
-    group.keys.forEach((key) => {
-      const widthVar = weekendDayKeys.has(key) ? "var(--weekend-day-width)" : "var(--day-width)";
-      html += `<col class="wk-${group.weekIndex}" style="width:${widthVar};">`;
+    group.keys.forEach(() => {
+      html += `<col class="wk-${group.weekIndex}" style="width:var(--day-width);">`;
     });
   });
   html += "</colgroup><thead><tr>";
@@ -752,22 +742,21 @@ function render(records, mappings) {
         const colType = columnTypesCache[key];
         const isChoiceCol = isChoiceColumn(key, colType, rawValue);
         const isDateCol = !isChoiceCol && (colType === "Date" || (colType && colType.startsWith("DateTime")));
-        const weekendClass = weekendDayKeys.has(key) ? " weekend-cell" : "";
 
         if (isChoiceCol && isDateRow) {
           const dateText = extractChoiceItems(rawValue).join(", ") || String(rawValue ?? "");
-          html += `<td class="editable date-cell${weekendClass}" data-row-id="${record.id}" data-col="${key}" data-cell-type="date">${escapeHtml(dateText)}</td>`;
+          html += `<td class="editable date-cell" data-row-id="${record.id}" data-col="${key}" data-cell-type="date">${escapeHtml(dateText)}</td>`;
           return;
         }
 
         if (isChoiceCol) {
           const displayHtml = renderChips(extractChoiceItems(rawValue));
-          html += `<td class="choice-cell wk-${group.weekIndex}${weekendClass}" data-row-id="${record.id}" data-col="${key}">${displayHtml}</td>`;
+          html += `<td class="choice-cell wk-${group.weekIndex}" data-row-id="${record.id}" data-col="${key}">${displayHtml}</td>`;
           return;
         }
 
         const displayHtml = isDateCol ? escapeHtml(formatDateValue(rawValue)) : escapeHtml(rawValue ?? "");
-        html += `<td class="editable wk-${group.weekIndex}${weekendClass}" data-row-id="${record.id}" data-col="${key}">${displayHtml}</td>`;
+        html += `<td class="editable wk-${group.weekIndex}" data-row-id="${record.id}" data-col="${key}">${displayHtml}</td>`;
       });
     });
 
