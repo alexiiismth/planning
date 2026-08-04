@@ -352,7 +352,6 @@ function parseFrenchDateText(value) {
 // auquel cas render() affichera un message d'erreur explicite.
 function computeWeekGroups(records, dayKeys) {
   if (!records || records.length === 0 || dayKeys.length === 0) return null;
-  const dateRow = records[0];
 
   const groups = [];
   let currentGroup = null;
@@ -362,8 +361,15 @@ function computeWeekGroups(records, dayKeys) {
     const key = dayKeys[i];
 
     if (isDateColPosition(i)) {
-      const d = parseFrenchDateText(dateRow[key]);
-      if (!d) return null; // date manquante/mal formatée sur une colonne de date
+      // On ne regarde plus uniquement la 1ère ligne : certaines colonnes n'ont
+      // une date valide que sur une seule case, peu importe la ligne. On
+      // parcourt donc toute la colonne et on prend la 1ère date exploitable.
+      let d = null;
+      for (let r = 0; r < records.length; r++) {
+        d = parseFrenchDateText(records[r][key]);
+        if (d) break;
+      }
+      if (!d) return null; // aucune date valide trouvée dans toute la colonne
       currentWeekNum = getISOWeekNumber(d);
     }
 
@@ -570,8 +576,8 @@ function render(records, mappings) {
   if (!weekKeyGroups) {
     appEl.innerHTML =
       `<div id="empty-msg">⚠️ Impossible de déterminer les semaines : chaque colonne ` +
-      `de date (3e, 5e, 7e... colonne du tableau) doit contenir un texte au format ` +
-      `JJ/MM/AAAA (ex: "01/08/2026") sur la première ligne du tableau.</div>`;
+      `de date (3e, 5e, 7e... colonne du tableau) doit contenir au moins une case ` +
+      `(n'importe quelle ligne) avec un texte au format JJ/MM/AAAA (ex: "01/08/2026").</div>`;
     statusEl.textContent = "";
     return;
   }
