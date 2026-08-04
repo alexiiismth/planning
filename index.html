@@ -338,6 +338,44 @@ function findFirstDateInColumn(records, key) {
   return null;
 }
 
+// Diagnostic affiché à la place du tableau quand aucune date n'a pu être
+// trouvée : montre, pour chaque colonne de jours, son type Grist et un
+// échantillon de ses valeurs brutes, pour comprendre pourquoi le format
+// JJ/MM/AAAA attendu n'a pas matché.
+function buildDateDiagnosticHtml(records, dayKeys) {
+  const sampleCount = Math.min(records.length, 5);
+  let rows = "";
+  dayKeys.forEach((key) => {
+    const type = columnTypesCache[key] || "?";
+    const samples = [];
+    for (let r = 0; r < sampleCount; r++) {
+      samples.push(JSON.stringify(records[r][key]));
+    }
+    const found = findFirstDateInColumn(records, key);
+    const statusIcon = found ? "✅" : "❌";
+    rows += `<tr>
+      <td style="padding:4px 8px;border:1px solid #ddd;">${statusIcon}</td>
+      <td style="padding:4px 8px;border:1px solid #ddd;"><code>${escapeHtml(key)}</code></td>
+      <td style="padding:4px 8px;border:1px solid #ddd;">${escapeHtml(type)}</td>
+      <td style="padding:4px 8px;border:1px solid #ddd;font-family:monospace;font-size:11px;">${escapeHtml(samples.join(" | "))}</td>
+    </tr>`;
+  });
+
+  return `<div style="padding:14px;">
+    <div style="margin-bottom:10px;">⚠️ Aucune colonne de jours ne contient de date au format <b>JJ/MM/AAAA</b> reconnaissable (ex: "01/08/2026").
+    Voici le contenu brut de chaque colonne "days" pour comprendre pourquoi (❌ = aucune date trouvée dans toute la colonne) :</div>
+    <table style="border-collapse:collapse;font-size:12px;">
+      <tr style="background:#f0f0f0;">
+        <th style="padding:4px 8px;border:1px solid #ddd;"></th>
+        <th style="padding:4px 8px;border:1px solid #ddd;">Colonne (colId)</th>
+        <th style="padding:4px 8px;border:1px solid #ddd;">Type Grist</th>
+        <th style="padding:4px 8px;border:1px solid #ddd;">Valeurs brutes (5 premières lignes)</th>
+      </tr>
+      ${rows}
+    </table>
+  </div>`;
+}
+
 // Ces colonnes de date sont de simples colonnes TEXTE (pas le type Date de
 // Grist) où le format saisi est "JJ/MM/AAAA" (ex: "01/08/2026").
 function parseFrenchDateText(value) {
@@ -576,11 +614,7 @@ function render(records, mappings) {
 
   const weekKeyGroups = computeWeekGroups(records, dayKeys);
   if (!weekKeyGroups) {
-    appEl.innerHTML =
-      `<div id="empty-msg">⚠️ Impossible de déterminer les semaines : il faut qu'au moins ` +
-      `une des colonnes de jours contienne, quelque part, un texte au format ` +
-      `JJ/MM/AAAA (ex: "01/08/2026"), et qu'elle soit avant les colonnes tâches ` +
-      `qui doivent en dépendre.</div>`;
+    appEl.innerHTML = buildDateDiagnosticHtml(records, dayKeys);
     statusEl.textContent = "";
     return;
   }
