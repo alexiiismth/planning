@@ -597,9 +597,30 @@ async function ensureColumnTypesLoaded(mappings) {
   if (signature === lastKeysSignature) return;
 
   try {
+    // IMPORTANT : colId (ex: "A", "B", "C") n'est unique QUE dans une table
+    // donnée, pas dans tout le document. Avec un widget dupliqué pour chaque
+    // mois, chaque table (Août, Septembre, ...) a SA PROPRE colonne "A", "B",
+    // "C"... Si on indexe par colId sans distinguer la table, on mélange les
+    // types de colonnes entre mois différents. On doit donc d'abord retrouver
+    // la référence numérique (id) de la table actuellement liée au widget,
+    // puis ne garder QUE les colonnes de cette table précise.
+    const currentTableId = await grist.getTable().getTableId();
+    const tablesMeta = await grist.docApi.fetchTable("_grist_Tables");
+    let currentTableRef = null;
+    for (let i = 0; i < tablesMeta.tableId.length; i++) {
+      if (tablesMeta.tableId[i] === currentTableId) {
+        currentTableRef = tablesMeta.id[i];
+        break;
+      }
+    }
+
     const colsMeta = await grist.docApi.fetchTable("_grist_Tables_column");
     const typeByColId = {};
     for (let i = 0; i < colsMeta.colId.length; i++) {
+      // Si on a réussi à identifier la table courante, on ignore toute
+      // colonne qui n'en fait pas partie (évite les collisions A/B/C entre
+      // les tables des différents mois).
+      if (currentTableRef !== null && colsMeta.parentId[i] !== currentTableRef) continue;
       typeByColId[colsMeta.colId[i]] = colsMeta.type[i];
     }
     columnTypesCache = {};
