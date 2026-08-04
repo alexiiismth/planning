@@ -627,9 +627,17 @@ function isChoiceColByName(colId) {
 }
 
 function isChoiceColumn(colId, colType, rawValue) {
+  // On se fie d'abord aux vraies infos Grist (type de colonne, ou forme des
+  // données reçues), fiables quel que soit le mois. Le nom de colonne
+  // (dernier chiffre pair/impair) ne sert plus qu'en dernier recours, si le
+  // type n'a pas pu être déterminé (ex: erreur réseau lors du fetch des types).
+  if (colType === "ChoiceList") return true;
+  if (isGristList(rawValue)) return true;
+  if (colType) return false; // type connu et différent de ChoiceList : pas une colonne choix
+
   const byName = isChoiceColByName(colId);
   if (byName !== null) return byName;
-  return colType === "ChoiceList" || isGristList(rawValue);
+  return false;
 }
 
 function renderChips(items) {
