@@ -287,8 +287,6 @@
      EXPORT / IMPRESSION PDF
      A4 paysage, planning mensuel complet sur UNE page.
      Les couleurs d'origine sont conservées.
-     Les largeurs du planning Grist à l'écran ne sont PAS modifiées.
-     Seules les deux colonnes Employé sont réduites automatiquement dans le PDF.
      ============================================================ */
   @page {
     size: A4 landscape;
@@ -352,9 +350,7 @@
       height: auto !important;
       margin: 0 !important;
       padding: 0 !important;
-      /* Uniquement pour le PDF : permet aux 2 colonnes Employé
-         de se réduire à la largeur réellement nécessaire au texte. */
-      table-layout: auto !important;
+      table-layout: fixed !important;
       border-collapse: collapse !important;
       box-shadow: none !important;
 
@@ -365,30 +361,21 @@
     /* Annule les largeurs fixes de l'écran (92px / 186px / 111px).
        Les colonnes sont redistribuées sur toute la largeur A4. */
     #app table col {
+      width: auto !important;
       min-width: 0 !important;
       max-width: none !important;
     }
 
-    /* PDF uniquement : les deux colonnes "Employé" se réduisent au
-       minimum nécessaire pour afficher leur contenu. */
-    #app table col:nth-child(1),
-    #app table col:nth-child(2) {
-      width: 1% !important;
+    #app table col:first-child {
+      width: 8% !important;
     }
 
-    /* Les colonnes des jours récupèrent tout l'espace restant. */
+    #app table col:nth-child(2) {
+      width: 12% !important;
+    }
+
     #app table col:nth-child(n+3) {
       width: auto !important;
-    }
-
-    /* Empêche le navigateur de créer artificiellement une grande largeur
-       pour les deux colonnes fixes. */
-    #app table th:nth-child(1),
-    #app table td:nth-child(1),
-    #app table th:nth-child(2),
-    #app table td:nth-child(2) {
-      width: 1% !important;
-      white-space: nowrap !important;
     }
 
     #app th,
