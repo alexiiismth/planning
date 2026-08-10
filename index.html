@@ -285,21 +285,32 @@
 
   /* ============================================================
      EXPORT / IMPRESSION PDF
-     Le navigateur utilise "Enregistrer au format PDF".
-     Le planning mensuel est forcé sur une seule page A4 paysage.
+     A4 paysage, planning mensuel complet sur UNE page.
+     Les couleurs d'origine sont conservées.
      ============================================================ */
   @page {
     size: A4 landscape;
-    margin: 7mm;
+    margin: 4mm;
   }
 
   @media print {
-    html, body {
-      width: 100%;
-      height: 100%;
+    html {
+      width: 100% !important;
+      height: 100% !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+
+    body {
+      width: 100% !important;
+      height: 100% !important;
       margin: 0 !important;
       padding: 0 !important;
       background: #fff !important;
+
+      /* Important : conserve les fonds des cellules et des chips. */
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
       overflow: hidden !important;
     }
 
@@ -310,58 +321,116 @@
       display: none !important;
     }
 
+    #status {
+      display: none !important;
+    }
+
     .scroll-wrap {
+      display: block !important;
       overflow: visible !important;
       width: 100% !important;
+      max-width: 100% !important;
+      margin: 0 !important;
+      padding: 0 !important;
     }
 
     #app {
+      display: block !important;
       width: 100% !important;
+      max-width: 100% !important;
       margin: 0 !important;
       padding: 0 !important;
     }
 
     #app table {
+      display: table !important;
       width: 100% !important;
       max-width: 100% !important;
-      table-layout: fixed !important;
-      box-shadow: none !important;
+      min-width: 0 !important;
+      height: auto !important;
       margin: 0 !important;
-      font-size: 7px !important;
+      padding: 0 !important;
+      table-layout: fixed !important;
+      border-collapse: collapse !important;
+      box-shadow: none !important;
+
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+
+    /* Annule les largeurs fixes de l'écran (92px / 186px / 111px).
+       Les colonnes sont redistribuées sur toute la largeur A4. */
+    #app table col {
+      width: auto !important;
+      min-width: 0 !important;
+      max-width: none !important;
+    }
+
+    #app table col:first-child {
+      width: 8% !important;
+    }
+
+    #app table col:nth-child(2) {
+      width: 12% !important;
+    }
+
+    #app table col:nth-child(n+3) {
+      width: auto !important;
     }
 
     #app th,
     #app td {
-      padding: 2px 3px !important;
-      font-size: 7px !important;
-      line-height: 1.15 !important;
-      min-height: 0 !important;
+      box-sizing: border-box !important;
+      padding: 1px 2px !important;
+      margin: 0 !important;
+      font-size: 5.5px !important;
+      line-height: 1.05 !important;
       height: auto !important;
+      min-height: 0 !important;
+      max-height: none !important;
+      vertical-align: top !important;
       overflow: hidden !important;
       word-break: break-word !important;
       overflow-wrap: anywhere !important;
+
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
     }
 
     #app th.week-header,
     #app th.fixed-header {
-      font-size: 7.5px !important;
-      padding: 2px !important;
+      font-size: 6px !important;
+      line-height: 1 !important;
+      padding: 1px !important;
+      white-space: nowrap !important;
     }
 
     #app td.editable,
-    #app td.choice-cell {
+    #app td.choice-cell,
+    #app td.date-cell {
+      font-size: 5.5px !important;
       min-height: 0 !important;
-      font-size: 7px !important;
     }
 
     #app .chip {
-      padding: 0 2px !important;
+      display: inline-block !important;
+      padding: 0 1px !important;
       margin: 0 1px 0 0 !important;
-      font-size: 6px !important;
-      line-height: 1.2 !important;
+      border-radius: 2px !important;
+      font-size: 4.5px !important;
+      line-height: 1.1 !important;
+
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
     }
 
-    /* Empêche une semaine de provoquer un saut de page. */
+    #app td.materiel-highlight {
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+
+    /* Évite les coupures de lignes/tableau entre pages. */
+    #app table,
     #app thead,
     #app tbody,
     #app tr {
@@ -369,8 +438,8 @@
       page-break-inside: avoid !important;
     }
 
-    /* Toutes les colonnes doivent rester visibles dans le PDF,
-       même si certaines semaines sont masquées à l'écran. */
+    /* Toutes les colonnes doivent apparaître dans l'export, même si
+       l'utilisateur avait masqué une semaine dans l'affichage. */
     #app col[class*="wk-"] {
       visibility: visible !important;
     }
@@ -1132,7 +1201,7 @@ function exportPlanningPDF() {
     closeChoiceDropdown();
   }
 
-  // Le rendu d'impression doit toujours montrer toutes les semaines.
+  // Le PDF doit toujours contenir le mois COMPLET.
   const previouslyHiddenWeeks = new Set(hiddenWeeks);
   hiddenWeeks.clear();
 
@@ -1140,23 +1209,32 @@ function exportPlanningPDF() {
     applyWeekVisibility(currentWeekGroups);
   }
 
-  // Laisse le navigateur appliquer les styles @media print avant d'ouvrir
-  // la boîte d'impression.
+  // Force explicitement les colonnes de semaines à être visibles pendant
+  // l'impression, même si un navigateur interprète différemment visibility:collapse.
+  document.querySelectorAll('#app col[class*="wk-"]').forEach((col) => {
+    col.style.visibility = "visible";
+  });
+
+  const restoreScreenState = () => {
+    hiddenWeeks.clear();
+    previouslyHiddenWeeks.forEach((weekNum) => hiddenWeeks.add(weekNum));
+
+    if (currentWeekGroups && currentWeekGroups.length) {
+      applyWeekVisibility(currentWeekGroups);
+      updateWeekButtonStyles();
+    }
+  };
+
+  // Laisse le navigateur appliquer @media print avant l'ouverture
+  // de la boîte d'impression.
   requestAnimationFrame(() => {
     setTimeout(() => {
       window.print();
 
-      // Après fermeture de la boîte d'impression, on restaure l'affichage
-      // précédent du planning.
-      setTimeout(() => {
-        hiddenWeeks.clear();
-        previouslyHiddenWeeks.forEach((weekNum) => hiddenWeeks.add(weekNum));
-        if (currentWeekGroups && currentWeekGroups.length) {
-          applyWeekVisibility(currentWeekGroups);
-          updateWeekButtonStyles();
-        }
-      }, 300);
-    }, 50);
+      // Sur certains navigateurs, print() est bloquant ; sur d'autres,
+      // le retour peut être asynchrone. On restaure dans les deux cas.
+      setTimeout(restoreScreenState, 500);
+    }, 100);
   });
 }
 </script>
