@@ -165,10 +165,39 @@
     line-height: 1.5;
   }
 
+  .toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+
   #status {
     font-size: 12px;
     color: #888;
-    margin-bottom: 8px;
+    margin-bottom: 0;
+  }
+
+  .export-pdf-btn {
+    flex: 0 0 auto;
+    padding: 8px 14px;
+    border: none;
+    border-radius: 6px;
+    background: #2c3e50;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.15);
+  }
+
+  .export-pdf-btn:hover {
+    background: #1f2d3a;
+  }
+
+  .export-pdf-btn:active {
+    transform: translateY(1px);
   }
 
   #empty-msg {
@@ -253,11 +282,109 @@
     font-weight: 600;
     cursor: pointer;
   }
+
+  /* ============================================================
+     EXPORT / IMPRESSION PDF
+     Le navigateur utilise "Enregistrer au format PDF".
+     Le planning mensuel est forcé sur une seule page A4 paysage.
+     ============================================================ */
+  @page {
+    size: A4 landscape;
+    margin: 7mm;
+  }
+
+  @media print {
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0 !important;
+      padding: 0 !important;
+      background: #fff !important;
+      overflow: hidden !important;
+    }
+
+    .toolbar,
+    .week-buttons,
+    .choice-dropdown,
+    #fatal-error-box {
+      display: none !important;
+    }
+
+    .scroll-wrap {
+      overflow: visible !important;
+      width: 100% !important;
+    }
+
+    #app {
+      width: 100% !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+
+    #app table {
+      width: 100% !important;
+      max-width: 100% !important;
+      table-layout: fixed !important;
+      box-shadow: none !important;
+      margin: 0 !important;
+      font-size: 7px !important;
+    }
+
+    #app th,
+    #app td {
+      padding: 2px 3px !important;
+      font-size: 7px !important;
+      line-height: 1.15 !important;
+      min-height: 0 !important;
+      height: auto !important;
+      overflow: hidden !important;
+      word-break: break-word !important;
+      overflow-wrap: anywhere !important;
+    }
+
+    #app th.week-header,
+    #app th.fixed-header {
+      font-size: 7.5px !important;
+      padding: 2px !important;
+    }
+
+    #app td.editable,
+    #app td.choice-cell {
+      min-height: 0 !important;
+      font-size: 7px !important;
+    }
+
+    #app .chip {
+      padding: 0 2px !important;
+      margin: 0 1px 0 0 !important;
+      font-size: 6px !important;
+      line-height: 1.2 !important;
+    }
+
+    /* Empêche une semaine de provoquer un saut de page. */
+    #app thead,
+    #app tbody,
+    #app tr {
+      break-inside: avoid !important;
+      page-break-inside: avoid !important;
+    }
+
+    /* Toutes les colonnes doivent rester visibles dans le PDF,
+       même si certaines semaines sont masquées à l'écran. */
+    #app col[class*="wk-"] {
+      visibility: visible !important;
+    }
+  }
 </style>
 </head>
 <body>
 
-<div id="status">Chargement…</div>
+<div class="toolbar">
+  <div id="status">Chargement…</div>
+  <button type="button" id="exportPdfBtn" class="export-pdf-btn" onclick="exportPlanningPDF()">
+    📄 Exporter en PDF
+  </button>
+</div>
 
 <div class="week-buttons" id="weekButtons"></div>
 
@@ -990,6 +1117,47 @@ function escapeHtml(str) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+// ============================================================
+// EXPORT DU PLANNING EN PDF
+// ============================================================
+// Utilise le moteur d'impression natif du navigateur :
+// dans la fenêtre d'impression, choisir "Enregistrer au format PDF".
+// Les règles @media print ci-dessus forcent le format A4 paysage
+// et la vue mensuelle sur une seule page.
+function exportPlanningPDF() {
+  // Ferme un éventuel menu de choix ouvert avant l'impression.
+  if (typeof closeChoiceDropdown === "function") {
+    closeChoiceDropdown();
+  }
+
+  // Le rendu d'impression doit toujours montrer toutes les semaines.
+  const previouslyHiddenWeeks = new Set(hiddenWeeks);
+  hiddenWeeks.clear();
+
+  if (currentWeekGroups && currentWeekGroups.length) {
+    applyWeekVisibility(currentWeekGroups);
+  }
+
+  // Laisse le navigateur appliquer les styles @media print avant d'ouvrir
+  // la boîte d'impression.
+  requestAnimationFrame(() => {
+    setTimeout(() => {
+      window.print();
+
+      // Après fermeture de la boîte d'impression, on restaure l'affichage
+      // précédent du planning.
+      setTimeout(() => {
+        hiddenWeeks.clear();
+        previouslyHiddenWeeks.forEach((weekNum) => hiddenWeeks.add(weekNum));
+        if (currentWeekGroups && currentWeekGroups.length) {
+          applyWeekVisibility(currentWeekGroups);
+          updateWeekButtonStyles();
+        }
+      }, 300);
+    }, 50);
+  });
 }
 </script>
 </body>
