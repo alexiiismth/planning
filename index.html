@@ -1546,12 +1546,23 @@ function adjustPrintBannerHeight(printAppEl) {
   const tableEl = printAppEl.querySelector("table");
   if (!imgEl || !tableEl) return;
 
+  // Repart de la hauteur naturelle de l'image (pleine largeur de page,
+  // ratio d'origine), en retirant d'abord toute hauteur explicite laissée
+  // par un export précédent.
+  imgEl.style.removeProperty("height");
   const naturalHeightPx = imgEl.getBoundingClientRect().height;
-  const tableHeightPx = tableEl.getBoundingClientRect().height;
 
+  // Taille de base = la MOITIÉ de la hauteur naturelle. C'est une taille
+  // FIXE : elle ne grandit jamais pour "remplir" l'espace laissé libre
+  // par un tableau court. Elle ne peut être que réduite (jamais agrandie)
+  // si le tableau a besoin de plus de place pour tenir sur une page.
+  const baseHeightPx = naturalHeightPx / 2;
+
+  const tableHeightPx = tableEl.getBoundingClientRect().height;
   const availableForImage = PRINT_PAGE_HEIGHT_PX - tableHeightPx - PRINT_PAGE_SAFETY_MARGIN_PX;
+
   const finalHeight = Math.max(
-    Math.min(naturalHeightPx, availableForImage),
+    Math.min(baseHeightPx, availableForImage),
     PRINT_BANNER_MIN_HEIGHT_PX
   );
 
