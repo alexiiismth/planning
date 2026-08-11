@@ -485,19 +485,18 @@
       print-color-adjust: exact !important;
     }
 
-    body.pdf-merge-mode #printApp table col {
+    /* La largeur exacte des colonnes "Employé" (fixes) est calculée
+       dynamiquement en JS (voir buildPrintTableHtml / computeFixedColWidthsPx)
+       en fonction du texte le plus long (mesuré en pixels réels) qu'elles
+       contiennent, et posée en style inline sur chaque <col> — donc rien
+       de figé ici, et surtout aucune règle générale qui pourrait entrer
+       en conflit avec cette largeur. Seules les colonnes de jours (qui,
+       elles, se partagent le reste de la largeur disponible) sont
+       réinitialisées ici. */
+    body.pdf-merge-mode #printApp table col.print-col-day {
       width: auto !important;
       min-width: 0 !important;
       max-width: none !important;
-    }
-
-    /* La largeur exacte des colonnes "Employé" (fixes) est calculée
-       dynamiquement en JS (voir buildPrintTableHtml / computeFixedColWidths)
-       en fonction du texte le plus long qu'elles contiennent, et posée en
-       style inline sur chaque <col> — donc rien de figé ici. Les colonnes
-       de jours se partagent le reste de la largeur disponible. */
-    body.pdf-merge-mode #printApp table col.print-col-day {
-      width: auto !important;
     }
 
     body.pdf-merge-mode #printApp th,
@@ -1080,23 +1079,45 @@ function buildMergedCellStyle(colors) {
   return `background:linear-gradient(to bottom, ${stops}) !important;color:#111 !important;text-shadow:0 0 1px #fff,0 0 1px #fff;`;
 }
 
-// Calcule, pour chaque colonne fixe (ex: "Employé"), la longueur de la
-// ligne la plus longue qu'elle contient (une "case" peut avoir plusieurs
-// lignes séparées par des retours à la ligne : on ne s'intéresse qu'à la
-// ligne visuelle la plus longue, pas à la somme de tout le texte de la
-// case), afin de poser une largeur de colonne juste suffisante pour que
-// chaque ligne tienne sans être coupée ni renvoyée à la ligne.
-function computeFixedColMaxChars(records, fixedKeys) {
-  const HARD_CAP = 40; // garde-fou : évite qu'une case anormalement longue ne fasse exploser la mise en page
+// Police et taille EXACTEMENT utilisées pour les cellules dans le PDF
+// (voir la règle CSS "body.pdf-merge-mode #printApp th, td" plus haut).
+// On s'en sert pour mesurer le texte en pixels réels, ce qui est fiable
+// contrairement à une estimation en "ch" (qui dépend de la taille de
+// police héritée par l'élément <col>, pas forcément la même).
+const PRINT_CELL_FONT = '5.5px -apple-system, "Segoe UI", Roboto, Arial, sans-serif';
+
+let _measureCanvasCtx = null;
+function measureTextWidthPx(text, font) {
+  if (!_measureCanvasCtx) {
+    _measureCanvasCtx = document.createElement("canvas").getContext("2d");
+  }
+  _measureCanvasCtx.font = font;
+  return _measureCanvasCtx.measureText(text).width;
+}
+
+// Calcule, pour chaque colonne fixe (ex: "Employé"), la largeur en pixels
+// nécessaire pour que sa ligne de texte la plus longue (une case peut
+// contenir plusieurs lignes séparées par des retours à la ligne : on ne
+// s'intéresse qu'à la ligne visuelle la plus longue) tienne sans être
+// coupée ni renvoyée à la ligne, plus le padding de la cellule et une
+// petite marge de sécurité.
+function computeFixedColWidthsPx(records, fixedKeys) {
+  const CELL_PADDING_PX = 6; // padding gauche+droite de la cellule (1px 2px * 2 côtés, arrondi)
+  const SAFETY_MARGIN_PX = 3;
+  const MIN_WIDTH_PX = 10;
+  const HARD_CAP_PX = 200; // garde-fou : évite qu'une case anormalement longue ne fasse exploser la mise en page
+
   return fixedKeys.map((key) => {
-    let max = 0;
+    let maxWidth = 0;
     records.forEach((record) => {
       const text = String(record[key] ?? "");
       text.split(/\r\n|\r|\n/).forEach((line) => {
-        if (line.length > max) max = line.length;
+        const w = measureTextWidthPx(line, PRINT_CELL_FONT);
+        if (w > maxWidth) maxWidth = w;
       });
     });
-    return Math.min(max, HARD_CAP);
+    const total = maxWidth + CELL_PADDING_PX + SAFETY_MARGIN_PX;
+    return Math.min(Math.max(total, MIN_WIDTH_PX), HARD_CAP_PX);
   });
 }
 
@@ -1121,16 +1142,11 @@ function buildPrintTableHtml(records, mappings) {
     chunksByWeekIndex[c.weekIndex].push(c);
   });
 
-  // Largeur en "ch" (proche de la largeur du caractère "0" dans la police
-  // courante) : longueur du texte le plus long + une petite marge, pour
-  // que ça tienne sur une seule ligne sans être plus large que nécessaire.
-  const fixedColMaxChars = computeFixedColMaxChars(records, fixedKeys);
+  const fixedColWidthsPx = computeFixedColWidthsPx(records, fixedKeys);
 
   let html = "<table><colgroup>";
   fixedKeys.forEach((key, i) => {
-    const maxChars = Math.max(fixedColMaxChars[i], 1);
-    const widthCh = (maxChars + 1.5).toFixed(1);
-    html += `<col style="width:${widthCh}ch !important;">`;
+    html += `<col style="width:${fixedColWidthsPx[i].toFixed(1)}px !important;">`;
   });
   chunks.forEach(() => { html += `<col class="print-col-day">`; });
   html += "</colgroup><thead><tr>";
