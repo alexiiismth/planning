@@ -1032,13 +1032,17 @@ function buildDayChunksWithWeek(records, dayKeys, weekKeyGroups) {
 // les clés suivantes sont les colonnes "tâche" associées (ex: "Travail/
 // matériels"). On récupère les choix sélectionnés dans CES colonnes-là
 // pour la ligne (l'employé) en cours, en gardant l'ordre d'apparition.
-function getChunkChoiceColors(record, chunk) {
+function getChunkChoiceItems(record, chunk) {
   const items = [];
   chunk.keys.slice(1).forEach((key) => {
     extractChoiceItems(record[key]).forEach((item) => {
       if (!items.includes(item)) items.push(item);
     });
   });
+  return items;
+}
+
+function getChoiceColorsForItems(items) {
   return items
     .map((item) => (CHOICE_COLORS[item] ? CHOICE_COLORS[item].bg : null))
     .filter(Boolean);
@@ -1101,7 +1105,8 @@ function buildPrintTableHtml(records, mappings) {
   });
   html += "</tr></thead><tbody>";
 
-  records.forEach((record) => {
+  records.forEach((record, rowIndex) => {
+    const isDateRow = FREEZE_FIRST_ROW_AS_DATE && rowIndex === 0;
     html += "<tr>";
 
     fixedKeys.forEach((key, i) => {
@@ -1114,12 +1119,21 @@ function buildPrintTableHtml(records, mappings) {
     });
 
     chunks.forEach((chunk) => {
-      const label = chunk.date
-        ? chunk.date.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })
-        : "";
-      const colors = getChunkChoiceColors(record, chunk);
+      if (isDateRow) {
+        // Première ligne : uniquement la date, comme sur le planning Grist.
+        const label = chunk.date
+          ? chunk.date.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })
+          : "";
+        html += `<td class="date-cell">${escapeHtml(label)}</td>`;
+        return;
+      }
+
+      // Autres lignes : le texte de la colonne "Travail/matériels" associée,
+      // avec le fond coloré du/des choix sélectionné(s) pour cette date.
+      const items = getChunkChoiceItems(record, chunk);
+      const colors = getChoiceColorsForItems(items);
       const styleAttr = colors.length ? ` style="${buildMergedCellStyle(colors)}"` : "";
-      html += `<td class="date-cell"${styleAttr}>${escapeHtml(label)}</td>`;
+      html += `<td class="date-cell"${styleAttr}>${escapeHtml(items.join(", "))}</td>`;
     });
 
     html += "</tr>";
