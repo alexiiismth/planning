@@ -1037,20 +1037,22 @@ function buildDayChunksWithWeek(records, dayKeys, weekKeyGroups) {
 }
 
 // Pour un chunk (jour) donné, on récupère les choix sélectionnés dans
-// TOUTES les colonnes du chunk (date + éventuelle(s) colonne(s) associée(s)
-// comme "Travail/matériels") pour la ligne (l'employé) en cours : sur la
-// vraie donnée, la date et les choix peuvent très bien se trouver dans la
-// MÊME colonne (la date en première ligne, les choix dans les lignes
-// suivantes), donc on ne peut pas se limiter à "toutes les clés sauf la
-// première".
-function getChunkChoiceItems(record, chunk) {
-  const items = [];
-  chunk.keys.forEach((key) => {
-    extractChoiceItems(record[key]).forEach((item) => {
-      if (!items.includes(item)) items.push(item);
-    });
-  });
-  return items;
+// Dans le chunk d'un jour, la PREMIÈRE clé (chunk.keys[0]) est la colonne
+// "date" du planning Grist — c'est ELLE qui porte le choix sélectionné
+// (Absences, Chantiers, ...) et dont on veut la couleur, MAIS JAMAIS le
+// nom en texte dans le PDF. Les clés suivantes (chunk.keys.slice(1)) sont
+// la ou les colonne(s) "Travail/matériels" associée(s), qui contiennent
+// du texte libre à afficher tel quel dans le PDF.
+function getDateColumnChoiceItems(record, chunk) {
+  return extractChoiceItems(record[chunk.keys[0]]);
+}
+
+function getMaterielColumnsText(record, chunk) {
+  return chunk.keys
+    .slice(1)
+    .map((key) => String(record[key] ?? "").trim())
+    .filter((t) => t.length > 0)
+    .join(" ");
 }
 
 function getChoiceColorsForItems(items) {
@@ -1182,15 +1184,17 @@ function buildPrintTableHtml(records, mappings) {
         return;
       }
 
-      // Autres lignes : le texte affiché est celui du/des choix
-      // sélectionné(s) dans la colonne "Travail/matériels" associée à
-      // cette date, et le fond reprend leur(s) couleur(s) (blanc par
-      // défaut si rien n'est sélectionné). Seule la ligne de date
-      // (ci-dessus) n'affiche jamais de nom de choix.
-      const items = getChunkChoiceItems(record, chunk);
-      const colors = getChoiceColorsForItems(items);
+      // Autres lignes :
+      // - le fond de la case reprend la couleur du/des choix sélectionné(s)
+      //   dans la colonne "date" du planning (blanc par défaut si rien
+      //   n'est sélectionné), SANS jamais afficher son nom en texte ;
+      // - le texte affiché est celui de la colonne "Travail/matériels"
+      //   associée (texte libre, affiché tel quel).
+      const dateColItems = getDateColumnChoiceItems(record, chunk);
+      const colors = getChoiceColorsForItems(dateColItems);
+      const materielText = getMaterielColumnsText(record, chunk);
       const styleAttr = colors.length ? ` style="${buildMergedCellStyle(colors)}"` : "";
-      html += `<td class="print-choice-cell"${styleAttr}>${escapeHtml(items.join(", "))}</td>`;
+      html += `<td class="print-choice-cell"${styleAttr}>${escapeHtml(materielText)}</td>`;
     });
 
     html += "</tr>";
