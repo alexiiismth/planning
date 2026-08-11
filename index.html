@@ -210,6 +210,12 @@
     overflow-x: auto;
   }
 
+  /* Table fusionnée utilisée UNIQUEMENT pour l'export PDF (voir
+     exportPlanningPDF / buildPrintTableHtml). Invisible à l'écran. */
+  #printApp {
+    display: none;
+  }
+
   .week-buttons {
     display: flex;
     flex-wrap: wrap;
@@ -443,6 +449,110 @@
     #app col[class*="wk-"] {
       visibility: visible !important;
     }
+
+    /* ------------------------------------------------------------
+       MODE FUSION (colonne date + colonne "Travail/matériels" en une
+       seule colonne) : activé en ajoutant la classe "pdf-merge-mode"
+       sur <body> juste avant window.print() (voir exportPlanningPDF).
+       On masque alors le tableau normal #app et on affiche à la place
+       le tableau fusionné #printApp, généré dynamiquement.
+       ------------------------------------------------------------ */
+    body.pdf-merge-mode #app {
+      display: none !important;
+    }
+
+    body.pdf-merge-mode #printApp {
+      display: block !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+
+    body.pdf-merge-mode #printApp table {
+      display: table !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      min-width: 0 !important;
+      height: auto !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      table-layout: fixed !important;
+      border-collapse: collapse !important;
+      box-shadow: none !important;
+
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+
+    body.pdf-merge-mode #printApp table col {
+      width: auto !important;
+      min-width: 0 !important;
+      max-width: none !important;
+    }
+
+    /* Colonne "Employé" (première colonne fixe) : un peu plus étroite
+       que sur l'écran, mais le texte doit rester sur une seule ligne
+       (voir la règle white-space: nowrap sur .print-employee-cell). */
+    body.pdf-merge-mode #printApp table col.print-col-employee {
+      width: 6% !important;
+    }
+
+    body.pdf-merge-mode #printApp table col:nth-child(2) {
+      width: 12% !important;
+    }
+
+    body.pdf-merge-mode #printApp table col:nth-child(n+3) {
+      width: auto !important;
+    }
+
+    body.pdf-merge-mode #printApp th,
+    body.pdf-merge-mode #printApp td {
+      box-sizing: border-box !important;
+      padding: 1px 2px !important;
+      margin: 0 !important;
+      font-size: 5.5px !important;
+      line-height: 1.05 !important;
+      height: auto !important;
+      min-height: 0 !important;
+      max-height: none !important;
+      vertical-align: middle !important;
+      overflow: hidden !important;
+      word-break: break-word !important;
+      overflow-wrap: anywhere !important;
+
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+
+    body.pdf-merge-mode #printApp th.week-header,
+    body.pdf-merge-mode #printApp th.fixed-header {
+      font-size: 6px !important;
+      line-height: 1 !important;
+      padding: 1px !important;
+      white-space: nowrap !important;
+    }
+
+    /* Première colonne (Employé) : reste sur une seule ligne, quitte à
+       déborder légèrement plutôt que de passer à la ligne. */
+    body.pdf-merge-mode #printApp td.print-employee-cell {
+      white-space: nowrap !important;
+      overflow: visible !important;
+      text-align: left !important;
+    }
+
+    body.pdf-merge-mode #printApp td.date-cell {
+      text-align: center !important;
+      font-weight: 600 !important;
+    }
+
+    body.pdf-merge-mode #printApp table,
+    body.pdf-merge-mode #printApp thead,
+    body.pdf-merge-mode #printApp tbody,
+    body.pdf-merge-mode #printApp tr {
+      break-inside: avoid !important;
+      page-break-inside: avoid !important;
+    }
   }
 </style>
 </head>
@@ -462,6 +572,11 @@
 </div>
 
 <div class="choice-dropdown" id="choiceDropdown"></div>
+
+<!-- Tableau fusionné généré uniquement au moment de l'export PDF
+     (voir buildPrintTableHtml / exportPlanningPDF). Reste vide et
+     invisible en dehors de l'export. -->
+<div id="printApp"></div>
 
 <script>
 // ============================================================
@@ -504,6 +619,8 @@ let activeDropdown = { rowId: null, colId: null };
 let dropdownPendingItems = []; // état local synchrone, évite les problèmes de timing entre coches rapides
 let currentWeekGroups = [];
 let lastWeekGroupsSignature = null;
+let lastRecords = null;
+let lastMappings = null;
 
 // ============================================================
 // CALCUL DYNAMIQUE DES SEMAINES (à partir des vraies dates)
@@ -891,7 +1008,131 @@ function formatDateValue(rawValue) {
   return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
+// ============================================================
+// TABLEAU FUSIONNÉ POUR L'EXPORT PDF
+// (colonne "date" + colonne "Travail/matériels" -> une seule colonne)
+// ============================================================
+
+// Reprend buildDayChunks (date + colonnes "tâche" associées rattachées
+// au même jour) et associe à chaque chunk l'index de semaine (weekIndex)
+// auquel il appartient, pour pouvoir reconstruire les en-têtes "Semaine X".
+function buildDayChunksWithWeek(records, dayKeys, weekKeyGroups) {
+  const chunks = buildDayChunks(records, dayKeys);
+  const weekIndexByKey = {};
+  weekKeyGroups.forEach((g) => {
+    g.keys.forEach((k) => { weekIndexByKey[k] = g.weekIndex; });
+  });
+  chunks.forEach((c) => {
+    c.weekIndex = weekIndexByKey[c.keys[0]];
+  });
+  return chunks;
+}
+
+// Pour un chunk (jour) donné, la première clé est la colonne "date" ;
+// les clés suivantes sont les colonnes "tâche" associées (ex: "Travail/
+// matériels"). On récupère les choix sélectionnés dans CES colonnes-là
+// pour la ligne (l'employé) en cours, en gardant l'ordre d'apparition.
+function getChunkChoiceColors(record, chunk) {
+  const items = [];
+  chunk.keys.slice(1).forEach((key) => {
+    extractChoiceItems(record[key]).forEach((item) => {
+      if (!items.includes(item)) items.push(item);
+    });
+  });
+  return items
+    .map((item) => (CHOICE_COLORS[item] ? CHOICE_COLORS[item].bg : null))
+    .filter(Boolean);
+}
+
+// Construit le style de fond de case : une seule couleur si un seul
+// choix, sinon un dégradé "en escalier" (bandes horizontales de même
+// hauteur, du haut vers le bas) pour représenter plusieurs choix sans
+// couper la case en deux visuellement de façon abrupte au milieu.
+function buildMergedCellStyle(colors) {
+  if (!colors || colors.length === 0) return "";
+  if (colors.length === 1) {
+    return `background:${colors[0]} !important;color:#111 !important;text-shadow:0 0 1px #fff,0 0 1px #fff;`;
+  }
+  const n = colors.length;
+  const stops = colors
+    .map((c, i) => {
+      const start = ((i / n) * 100).toFixed(2);
+      const end = (((i + 1) / n) * 100).toFixed(2);
+      return `${c} ${start}%, ${c} ${end}%`;
+    })
+    .join(", ");
+  return `background:linear-gradient(to bottom, ${stops}) !important;color:#111 !important;text-shadow:0 0 1px #fff,0 0 1px #fff;`;
+}
+
+// Génère le HTML complet du tableau fusionné utilisé pour l'export PDF.
+// Retourne null si les dates n'ont pas pu être déterminées (dans ce cas,
+// exportPlanningPDF() se rabat simplement sur l'impression normale de #app).
+function buildPrintTableHtml(records, mappings) {
+  if (!records || records.length === 0 || !mappings || !mappings.fixed || !mappings.days) return null;
+
+  const fixedKeys = mappings.fixed;
+  const dayKeysWithWeekends = trimPhantomTrailingDayColumns(records, mappings.days);
+  const weekendDayKeys = computeWeekendKeySet(records, dayKeysWithWeekends);
+  const dayKeys = dayKeysWithWeekends.filter((key) => !weekendDayKeys.has(key));
+
+  const weekKeyGroups = computeWeekGroups(records, dayKeys);
+  if (!weekKeyGroups) return null;
+
+  const chunks = buildDayChunksWithWeek(records, dayKeys, weekKeyGroups);
+  const chunksByWeekIndex = {};
+  chunks.forEach((c) => {
+    if (!chunksByWeekIndex[c.weekIndex]) chunksByWeekIndex[c.weekIndex] = [];
+    chunksByWeekIndex[c.weekIndex].push(c);
+  });
+
+  let html = "<table><colgroup>";
+  fixedKeys.forEach((key, i) => {
+    html += i === 0 ? `<col class="print-col-employee">` : `<col>`;
+  });
+  chunks.forEach(() => { html += `<col>`; });
+  html += "</colgroup><thead><tr>";
+
+  html += `<th class="fixed-header" colspan="${fixedKeys.length}">${escapeHtml(FIXED_MERGED_LABEL)}</th>`;
+  weekKeyGroups.forEach((group) => {
+    const groupChunks = chunksByWeekIndex[group.weekIndex] || [];
+    if (groupChunks.length > 0) {
+      html += `<th class="week-header" colspan="${groupChunks.length}">${escapeHtml(group.label)}</th>`;
+    }
+  });
+  html += "</tr></thead><tbody>";
+
+  records.forEach((record) => {
+    html += "<tr>";
+
+    fixedKeys.forEach((key, i) => {
+      const rawValue = record[key];
+      const plainText = String(rawValue ?? "");
+      const isFirstFixedCol = i === 0;
+      const highlight = isFirstFixedCol && plainText.includes(MATERIEL_KEYWORD) ? " materiel-highlight" : "";
+      const extraClass = isFirstFixedCol ? " print-employee-cell" : "";
+      html += `<td class="editable${highlight}${extraClass}">${escapeHtml(plainText)}</td>`;
+    });
+
+    chunks.forEach((chunk) => {
+      const label = chunk.date
+        ? chunk.date.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })
+        : "";
+      const colors = getChunkChoiceColors(record, chunk);
+      const styleAttr = colors.length ? ` style="${buildMergedCellStyle(colors)}"` : "";
+      html += `<td class="date-cell"${styleAttr}>${escapeHtml(label)}</td>`;
+    });
+
+    html += "</tr>";
+  });
+
+  html += "</tbody></table>";
+  return html;
+}
+
 function render(records, mappings) {
+  lastRecords = records;
+  lastMappings = mappings;
+
   const statusEl = document.getElementById("status");
   const appEl = document.getElementById("app");
 
@@ -1215,6 +1456,22 @@ function exportPlanningPDF() {
     col.style.visibility = "visible";
   });
 
+  // Construit le tableau fusionné (date + "Travail/matériels" en une
+  // seule colonne colorée) et l'affiche à la place du tableau normal
+  // pendant l'impression. Si la construction échoue (dates non
+  // détectables, etc.), on se rabat simplement sur l'impression du
+  // tableau normal #app, comme avant.
+  let mergedActivated = false;
+  const printAppEl = document.getElementById("printApp");
+  if (lastRecords && lastMappings) {
+    const printHtml = buildPrintTableHtml(lastRecords, lastMappings);
+    if (printHtml) {
+      printAppEl.innerHTML = printHtml;
+      document.body.classList.add("pdf-merge-mode");
+      mergedActivated = true;
+    }
+  }
+
   const restoreScreenState = () => {
     hiddenWeeks.clear();
     previouslyHiddenWeeks.forEach((weekNum) => hiddenWeeks.add(weekNum));
@@ -1222,6 +1479,11 @@ function exportPlanningPDF() {
     if (currentWeekGroups && currentWeekGroups.length) {
       applyWeekVisibility(currentWeekGroups);
       updateWeekButtonStyles();
+    }
+
+    if (mergedActivated) {
+      document.body.classList.remove("pdf-merge-mode");
+      printAppEl.innerHTML = "";
     }
   };
 
