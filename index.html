@@ -1182,13 +1182,14 @@ function buildPrintTableHtml(records, mappings) {
         return;
       }
 
-      // Autres lignes : uniquement la couleur du/des choix sélectionné(s)
-      // pour cette date (pas de texte), blanc par défaut si rien n'est
-      // sélectionné.
+      // Autres lignes : le fond reprend la couleur du/des choix
+      // sélectionné(s) pour cette date (blanc par défaut si rien n'est
+      // sélectionné), et le texte affiché est celui du/des choix (le
+      // texte qui était dans la colonne "Travail/matériels" associée).
       const items = getChunkChoiceItems(record, chunk);
       const colors = getChoiceColorsForItems(items);
       const styleAttr = colors.length ? ` style="${buildMergedCellStyle(colors)}"` : "";
-      html += `<td class="print-choice-cell"${styleAttr}></td>`;
+      html += `<td class="print-choice-cell"${styleAttr}>${escapeHtml(items.join(", "))}</td>`;
     });
 
     html += "</tr>";
