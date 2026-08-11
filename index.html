@@ -491,18 +491,12 @@
       max-width: none !important;
     }
 
-    /* Colonne "Employé" (première colonne fixe) : un peu plus étroite
-       que sur l'écran, mais le texte doit rester sur une seule ligne
-       (voir la règle white-space: nowrap sur .print-employee-cell). */
-    body.pdf-merge-mode #printApp table col.print-col-employee {
-      width: 6% !important;
-    }
-
-    body.pdf-merge-mode #printApp table col:nth-child(2) {
-      width: 12% !important;
-    }
-
-    body.pdf-merge-mode #printApp table col:nth-child(n+3) {
+    /* La largeur exacte des colonnes "Employé" (fixes) est calculée
+       dynamiquement en JS (voir buildPrintTableHtml / computeFixedColWidths)
+       en fonction du texte le plus long qu'elles contiennent, et posée en
+       style inline sur chaque <col> — donc rien de figé ici. Les colonnes
+       de jours se partagent le reste de la largeur disponible. */
+    body.pdf-merge-mode #printApp table col.print-col-day {
       width: auto !important;
     }
 
@@ -533,9 +527,10 @@
       white-space: nowrap !important;
     }
 
-    /* Première colonne (Employé) : reste sur une seule ligne, quitte à
-       déborder légèrement plutôt que de passer à la ligne. */
-    body.pdf-merge-mode #printApp td.print-employee-cell {
+    /* Colonnes fixes ("Employé") : toujours sur une seule ligne, la
+       largeur (posée dynamiquement sur le <col>, voir plus haut) est
+       calculée pour être juste suffisante. */
+    body.pdf-merge-mode #printApp td.print-fixed-cell {
       white-space: nowrap !important;
       overflow: visible !important;
       text-align: left !important;
@@ -1082,6 +1077,21 @@ function buildMergedCellStyle(colors) {
   return `background:linear-gradient(to bottom, ${stops}) !important;color:#111 !important;text-shadow:0 0 1px #fff,0 0 1px #fff;`;
 }
 
+// Calcule, pour chaque colonne fixe (ex: "Employé"), la longueur du texte
+// le plus long qu'elle contient (sur toutes les lignes), afin de poser une
+// largeur de colonne juste suffisante pour que le texte tienne sur une
+// seule ligne, sans plus.
+function computeFixedColMaxChars(records, fixedKeys) {
+  return fixedKeys.map((key) => {
+    let max = 0;
+    records.forEach((record) => {
+      const len = String(record[key] ?? "").length;
+      if (len > max) max = len;
+    });
+    return max;
+  });
+}
+
 // Génère le HTML complet du tableau fusionné utilisé pour l'export PDF.
 // Retourne null si les dates n'ont pas pu être déterminées (dans ce cas,
 // exportPlanningPDF() se rabat simplement sur l'impression normale de #app).
@@ -1103,11 +1113,18 @@ function buildPrintTableHtml(records, mappings) {
     chunksByWeekIndex[c.weekIndex].push(c);
   });
 
+  // Largeur en "ch" (proche de la largeur du caractère "0" dans la police
+  // courante) : longueur du texte le plus long + une petite marge, pour
+  // que ça tienne sur une seule ligne sans être plus large que nécessaire.
+  const fixedColMaxChars = computeFixedColMaxChars(records, fixedKeys);
+
   let html = "<table><colgroup>";
   fixedKeys.forEach((key, i) => {
-    html += i === 0 ? `<col class="print-col-employee">` : `<col>`;
+    const maxChars = Math.max(fixedColMaxChars[i], 1);
+    const widthCh = (maxChars + 1.5).toFixed(1);
+    html += `<col style="width:${widthCh}ch !important;">`;
   });
-  chunks.forEach(() => { html += `<col>`; });
+  chunks.forEach(() => { html += `<col class="print-col-day">`; });
   html += "</colgroup><thead><tr>";
 
   html += `<th class="fixed-header" colspan="${fixedKeys.length}">${escapeHtml(FIXED_MERGED_LABEL)}</th>`;
@@ -1128,8 +1145,7 @@ function buildPrintTableHtml(records, mappings) {
       const plainText = String(rawValue ?? "");
       const isFirstFixedCol = i === 0;
       const highlight = isFirstFixedCol && plainText.includes(MATERIEL_KEYWORD) ? " materiel-highlight" : "";
-      const extraClass = isFirstFixedCol ? " print-employee-cell" : "";
-      html += `<td class="editable${highlight}${extraClass}">${escapeHtml(plainText)}</td>`;
+      html += `<td class="editable print-fixed-cell${highlight}">${escapeHtml(plainText)}</td>`;
     });
 
     chunks.forEach((chunk) => {
@@ -1142,13 +1158,13 @@ function buildPrintTableHtml(records, mappings) {
         return;
       }
 
-      // Autres lignes : le texte de la colonne "Travail/matériels" associée,
-      // avec le fond coloré du/des choix sélectionné(s) pour cette date
-      // (blanc par défaut si rien n'est sélectionné).
+      // Autres lignes : uniquement la couleur du/des choix sélectionné(s)
+      // pour cette date (pas de texte), blanc par défaut si rien n'est
+      // sélectionné.
       const items = getChunkChoiceItems(record, chunk);
       const colors = getChoiceColorsForItems(items);
       const styleAttr = colors.length ? ` style="${buildMergedCellStyle(colors)}"` : "";
-      html += `<td class="print-choice-cell"${styleAttr}>${escapeHtml(items.join(", "))}</td>`;
+      html += `<td class="print-choice-cell"${styleAttr}></td>`;
     });
 
     html += "</tr>";
