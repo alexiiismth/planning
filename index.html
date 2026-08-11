@@ -527,11 +527,14 @@
       white-space: nowrap !important;
     }
 
-    /* Colonnes fixes ("Employé") : toujours sur une seule ligne, la
-       largeur (posée dynamiquement sur le <col>, voir plus haut) est
-       calculée pour être juste suffisante. */
+    /* Colonnes fixes ("Employé") : la largeur (posée dynamiquement sur le
+       <col>, voir plus haut) est calculée sur la ligne la plus longue,
+       donc pas de retour à la ligne "forcé" par manque de place. Les
+       retours à la ligne déjà présents dans la donnée (plusieurs lignes
+       dans une même case) sont en revanche conservés tels quels, et le
+       texte n'est jamais coupé. */
     body.pdf-merge-mode #printApp td.print-fixed-cell {
-      white-space: nowrap !important;
+      white-space: pre-wrap !important;
       overflow: visible !important;
       text-align: left !important;
     }
@@ -1077,18 +1080,23 @@ function buildMergedCellStyle(colors) {
   return `background:linear-gradient(to bottom, ${stops}) !important;color:#111 !important;text-shadow:0 0 1px #fff,0 0 1px #fff;`;
 }
 
-// Calcule, pour chaque colonne fixe (ex: "Employé"), la longueur du texte
-// le plus long qu'elle contient (sur toutes les lignes), afin de poser une
-// largeur de colonne juste suffisante pour que le texte tienne sur une
-// seule ligne, sans plus.
+// Calcule, pour chaque colonne fixe (ex: "Employé"), la longueur de la
+// ligne la plus longue qu'elle contient (une "case" peut avoir plusieurs
+// lignes séparées par des retours à la ligne : on ne s'intéresse qu'à la
+// ligne visuelle la plus longue, pas à la somme de tout le texte de la
+// case), afin de poser une largeur de colonne juste suffisante pour que
+// chaque ligne tienne sans être coupée ni renvoyée à la ligne.
 function computeFixedColMaxChars(records, fixedKeys) {
+  const HARD_CAP = 40; // garde-fou : évite qu'une case anormalement longue ne fasse exploser la mise en page
   return fixedKeys.map((key) => {
     let max = 0;
     records.forEach((record) => {
-      const len = String(record[key] ?? "").length;
-      if (len > max) max = len;
+      const text = String(record[key] ?? "");
+      text.split(/\r\n|\r|\n/).forEach((line) => {
+        if (line.length > max) max = line.length;
+      });
     });
-    return max;
+    return Math.min(max, HARD_CAP);
   });
 }
 
