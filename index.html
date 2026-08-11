@@ -544,6 +544,17 @@
     body.pdf-merge-mode #printApp td.date-cell {
       text-align: center !important;
       font-weight: 600 !important;
+      background: #f0f0f0 !important;
+      color: #333 !important;
+    }
+
+    /* Cases "Travail/matériels" fusionnées : blanches par défaut, la
+       couleur n'est appliquée que via le style inline quand un ou
+       plusieurs choix sont sélectionnés (voir buildPrintTableHtml). */
+    body.pdf-merge-mode #printApp td.print-choice-cell {
+      text-align: center !important;
+      background: #ffffff !important;
+      color: #333 !important;
     }
 
     body.pdf-merge-mode #printApp table,
@@ -1129,11 +1140,12 @@ function buildPrintTableHtml(records, mappings) {
       }
 
       // Autres lignes : le texte de la colonne "Travail/matériels" associée,
-      // avec le fond coloré du/des choix sélectionné(s) pour cette date.
+      // avec le fond coloré du/des choix sélectionné(s) pour cette date
+      // (blanc par défaut si rien n'est sélectionné).
       const items = getChunkChoiceItems(record, chunk);
       const colors = getChoiceColorsForItems(items);
       const styleAttr = colors.length ? ` style="${buildMergedCellStyle(colors)}"` : "";
-      html += `<td class="date-cell"${styleAttr}>${escapeHtml(items.join(", "))}</td>`;
+      html += `<td class="print-choice-cell"${styleAttr}>${escapeHtml(items.join(", "))}</td>`;
     });
 
     html += "</tr>";
