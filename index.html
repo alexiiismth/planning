@@ -1039,13 +1039,16 @@ function buildDayChunksWithWeek(records, dayKeys, weekKeyGroups) {
   return chunks;
 }
 
-// Pour un chunk (jour) donné, la première clé est la colonne "date" ;
-// les clés suivantes sont les colonnes "tâche" associées (ex: "Travail/
-// matériels"). On récupère les choix sélectionnés dans CES colonnes-là
-// pour la ligne (l'employé) en cours, en gardant l'ordre d'apparition.
+// Pour un chunk (jour) donné, on récupère les choix sélectionnés dans
+// TOUTES les colonnes du chunk (date + éventuelle(s) colonne(s) associée(s)
+// comme "Travail/matériels") pour la ligne (l'employé) en cours : sur la
+// vraie donnée, la date et les choix peuvent très bien se trouver dans la
+// MÊME colonne (la date en première ligne, les choix dans les lignes
+// suivantes), donc on ne peut pas se limiter à "toutes les clés sauf la
+// première".
 function getChunkChoiceItems(record, chunk) {
   const items = [];
-  chunk.keys.slice(1).forEach((key) => {
+  chunk.keys.forEach((key) => {
     extractChoiceItems(record[key]).forEach((item) => {
       if (!items.includes(item)) items.push(item);
     });
