@@ -224,6 +224,14 @@
 
   .scroll-wrap {
     overflow-x: auto;
+    /* IMPORTANT : sans ceci, le navigateur convertit automatiquement
+       overflow-y en "auto" dès que overflow-x est défini, ce qui fait de
+       .scroll-wrap son propre conteneur de défilement vertical. Les
+       éléments "sticky" à l'intérieur (en-tête, ligne des dates) se
+       figeraient alors par rapport à CE conteneur (qui ne défile jamais
+       vraiment, car c'est la page entière qui défile) au lieu de la
+       fenêtre — et donc ne resteraient jamais visibles. */
+    overflow-y: visible;
   }
 
   /* Table fusionnée utilisée UNIQUEMENT pour l'export PDF (voir
