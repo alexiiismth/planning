@@ -214,6 +214,189 @@
     transform: translateY(1px);
   }
 
+  .info-btn {
+    flex: 0 0 auto;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: #eef1f4;
+    color: #2c3e50;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.15);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .info-btn:hover {
+    background: #dfe4e9;
+  }
+
+  .info-btn:active {
+    transform: translateY(1px);
+  }
+
+  .toolbar-actions {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* ============================================================
+     MODALE D'AIDE — guide d'utilisation du widget
+     ============================================================ */
+  .help-modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 32, 0.55);
+    z-index: 1000;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 4vh 16px;
+  }
+
+  .help-modal-overlay.open {
+    display: flex;
+  }
+
+  .help-modal {
+    background: #fff;
+    width: min(760px, 100%);
+    max-height: 92vh;
+    border-radius: 10px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .help-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 18px;
+    background: #2c3e50;
+    color: #fff;
+    flex: 0 0 auto;
+  }
+
+  .help-modal-header h2 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 700;
+  }
+
+  .help-modal-close {
+    background: transparent;
+    border: none;
+    color: #fff;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 6px;
+  }
+
+  .help-modal-close:hover {
+    background: rgba(255,255,255,0.15);
+  }
+
+  .help-modal-body {
+    padding: 18px 22px 26px;
+    overflow-y: auto;
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: #222;
+  }
+
+  .help-modal-body h3 {
+    font-size: 15px;
+    margin: 22px 0 8px;
+    color: #1a252f;
+    border-bottom: 2px solid #eef1f4;
+    padding-bottom: 4px;
+  }
+
+  .help-modal-body h3:first-child {
+    margin-top: 0;
+  }
+
+  .help-modal-body p {
+    margin: 8px 0;
+  }
+
+  .help-modal-body ul, .help-modal-body ol {
+    margin: 8px 0;
+    padding-left: 22px;
+  }
+
+  .help-modal-body li {
+    margin: 4px 0;
+  }
+
+  .help-modal-body table {
+    width: 100%;
+    margin: 10px 0 16px;
+    font-size: 12.5px;
+    box-shadow: none;
+  }
+
+  .help-modal-body th, .help-modal-body td {
+    padding: 6px 8px;
+    font-size: 12.5px;
+  }
+
+  .help-modal-body th {
+    background: #eef1f4;
+    color: #1a252f;
+  }
+
+  .help-modal-body .legend-swatch {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+
+  .help-modal-body .tip {
+    background: #eef6ff;
+    border-left: 3px solid #3498db;
+    padding: 8px 12px;
+    margin: 10px 0;
+    border-radius: 4px;
+  }
+
+  .help-modal-body .warn {
+    background: #fff8e6;
+    border-left: 3px solid #e6a700;
+    padding: 8px 12px;
+    margin: 10px 0;
+    border-radius: 4px;
+  }
+
+  .help-modal-body .ok {
+    background: #eafaf0;
+    border-left: 3px solid #27ae60;
+    padding: 8px 12px;
+    margin: 10px 0;
+    border-radius: 4px;
+  }
+
+  @media print {
+    .help-modal-overlay {
+      display: none !important;
+    }
+  }
+
   #empty-msg {
     padding: 20px;
     text-align: center;
@@ -697,9 +880,150 @@
 
 <div class="toolbar">
   <div id="status">Chargement…</div>
-  <button type="button" id="exportPdfBtn" class="export-pdf-btn" onclick="exportPlanningPDF()">
-    📄 Exporter en PDF
-  </button>
+  <div class="toolbar-actions">
+    <button type="button" id="infoBtn" class="info-btn" onclick="openHelpModal()" title="Guide d'utilisation" aria-label="Guide d'utilisation">
+      ℹ️
+    </button>
+    <button type="button" id="exportPdfBtn" class="export-pdf-btn" onclick="exportPlanningPDF()">
+      📄 Exporter en PDF
+    </button>
+  </div>
+</div>
+
+<!-- ============================================================
+     MODALE — Guide d'utilisation du widget (déclenchée par le
+     bouton ℹ️ à côté de "Exporter en PDF"). Masquée à l'impression.
+     ============================================================ -->
+<div class="help-modal-overlay" id="helpModalOverlay" onclick="if (event.target === this) closeHelpModal();">
+  <div class="help-modal" role="dialog" aria-modal="true" aria-labelledby="helpModalTitle">
+    <div class="help-modal-header">
+      <h2 id="helpModalTitle">📅 Guide d'utilisation — Widget Planning Grist</h2>
+      <button type="button" class="help-modal-close" onclick="closeHelpModal()" aria-label="Fermer">✕</button>
+    </div>
+    <div class="help-modal-body">
+
+      <p>Ce guide explique comment utiliser au quotidien le widget de planning mensuel (saisie, filtres par semaine, export PDF) sans connaissances techniques.</p>
+
+      <h3>1. Vue d'ensemble</h3>
+      <p>Ce widget affiche un <strong>planning mensuel</strong> sous forme de tableau : une ligne par personne (ou par ressource), une colonne par jour du mois. Il permet à toute l'équipe de :</p>
+      <ul>
+        <li>🖊️ <strong>Saisir du texte libre</strong> dans une case (ex. commentaire, lieu de mission…) ;</li>
+        <li>🎨 <strong>Choisir une activité codée par couleur</strong> dans une case (Absences, Réunion, Formation…) ;</li>
+        <li>🔧 <strong>Repérer en un coup d'œil les lignes "Matériels"</strong> grâce à une couleur dédiée ;</li>
+        <li>👁️ <strong>Afficher/masquer certaines semaines</strong> pour se concentrer sur une période ;</li>
+        <li>📄 <strong>Exporter le mois complet en PDF</strong>, mis en page automatiquement sur une seule page A4 paysage, prêt à imprimer ou à partager.</li>
+      </ul>
+
+      <h3>2. Prise en main de l'écran</h3>
+      <table>
+        <tr><th>Zone</th><th>Rôle</th></tr>
+        <tr><td><strong>Barre d'outils</strong> (tout en haut)</td><td>Contient le statut de chargement, le bouton ℹ️ d'aide et le bouton <strong>📄 Exporter en PDF</strong>. Reste visible même en faisant défiler la page.</td></tr>
+        <tr><td><strong>Boutons de semaine</strong></td><td>Un bouton par semaine du mois (ex. <em>Semaine 32</em>). Permettent de masquer/afficher des colonnes de jours.</td></tr>
+        <tr><td><strong>Ligne des dates + en-têtes</strong></td><td>Reste "collée" en haut de l'écran pendant le défilement vers le bas, pour toujours savoir à quelle date correspond chaque colonne.</td></tr>
+        <tr><td><strong>Corps du tableau</strong></td><td>Une ligne par personne/ressource, une colonne par jour. C'est ici que vous cliquez pour saisir ou choisir une valeur.</td></tr>
+      </table>
+      <div class="tip">💡 Le tableau peut être plus large que l'écran : faites défiler <strong>horizontalement</strong> (barre de défilement en bas, ou glisser à deux doigts sur trackpad) pour voir les jours suivants.</div>
+
+      <h3>3. Modifier une case de texte libre</h3>
+      <p>Certaines colonnes acceptent du texte libre (commentaire, précision, nom de chantier…).</p>
+      <ol>
+        <li><strong>Cliquez une fois</strong> sur la case → elle devient éditable (fond jaune clair, contour bleu).</li>
+        <li>Tapez votre texte.</li>
+        <li>Pour valider : cliquez <strong>en dehors</strong> de la case, ou appuyez sur <strong>Entrée</strong>.</li>
+        <li>Pour annuler une saisie en cours, appuyez sur <strong>Échap</strong>.</li>
+      </ol>
+      <div class="tip">⏎ Astuce : la touche Entrée valide directement, inutile de cliquer ailleurs.</div>
+
+      <h3>4. Choisir une activité (Absences, Chantiers, Réunion…)</h3>
+      <p>Les colonnes de type "activité" ne se remplissent pas au clavier : elles s'utilisent avec un <strong>menu déroulant à cases à cocher</strong>, ce qui garantit un affichage cohérent et coloré pour toute l'équipe.</p>
+      <ol>
+        <li><strong>Cliquez</strong> sur la case du jour concerné → un menu apparaît avec la liste des choix possibles.</li>
+        <li><strong>Cochez</strong> une ou plusieurs activités (une case peut cumuler plusieurs choix, ex. <em>Chantiers</em> + <em>Formation</em>).</li>
+        <li>Cliquez sur <strong>Fermer</strong> (ou cliquez n'importe où en dehors du menu) pour valider.</li>
+        <li>La case affiche alors une ou plusieurs <strong>pastilles de couleur</strong> ("chips") correspondant aux choix sélectionnés.</li>
+      </ol>
+
+      <p><strong>🎨 Légende des couleurs</strong></p>
+      <table>
+        <tr><th>Activité</th><th>Couleur</th></tr>
+        <tr><td>Absences</td><td><span class="legend-swatch" style="background:#e74c3c;"></span>Rouge</td></tr>
+        <tr><td>Chantiers</td><td><span class="legend-swatch" style="background:#87ceeb;"></span>Bleu ciel</td></tr>
+        <tr><td>Rapport</td><td><span class="legend-swatch" style="background:#2ecc71;"></span>Vert</td></tr>
+        <tr><td>Réunion</td><td><span class="legend-swatch" style="background:#4a4a4a;"></span>Gris foncé</td></tr>
+        <tr><td>Administratif</td><td><span class="legend-swatch" style="background:#dcdcdc;border:1px solid #bbb;"></span>Gris clair</td></tr>
+        <tr><td>Essai labo</td><td><span class="legend-swatch" style="background:#f1c40f;"></span>Jaune</td></tr>
+        <tr><td>Recherche</td><td><span class="legend-swatch" style="background:#000080;"></span>Bleu marine</td></tr>
+        <tr><td>Formation</td><td><span class="legend-swatch" style="background:#ffb6c1;"></span>Rose</td></tr>
+        <tr><td>Grève</td><td><span class="legend-swatch" style="background:#fff;border:1px solid #999;"></span>Blanc avec bordure</td></tr>
+      </table>
+      <div class="tip">💡 Pour <strong>retirer</strong> une activité déjà cochée : rouvrez la case, décochez l'activité, puis fermez le menu.</div>
+
+      <h3>5. Repérer le matériel</h3>
+      <p>Toute ligne dont le nom (première colonne fixe) contient le mot <strong>"Matériels"</strong> est automatiquement <strong>surlignée en violet clair</strong>, à l'écran comme sur le PDF exporté. Aucune action n'est nécessaire : c'est une mise en forme automatique qui aide à distinguer d'un coup d'œil les lignes "personnes" des lignes "matériel/ressources".</p>
+
+      <h3>6. Afficher / masquer une semaine</h3>
+      <p>Chaque bouton <strong>"Semaine X"</strong> en haut de l'écran permet de replier les colonnes de la semaine correspondante, pour se concentrer sur une période précise (par exemple les 2 semaines en cours) sans avoir à faire défiler tout le mois.</p>
+      <ol>
+        <li>Cliquez sur le bouton <strong>"Semaine X"</strong> de la semaine à masquer. Le bouton passe en style "inversé" (fond blanc, texte coloré) pour indiquer que la semaine est masquée. Les colonnes de cette semaine disparaissent du tableau.</li>
+        <li>Recliquez sur le même bouton pour la <strong>réafficher</strong>.</li>
+      </ol>
+      <div class="warn">⚠️ Ce masquage est <strong>uniquement visuel</strong>, propre à votre écran : il ne supprime aucune donnée et n'affecte pas les autres utilisateurs du widget.</div>
+      <div class="ok">✅ <strong>Lors d'un export PDF</strong>, toutes les semaines masquées sont automatiquement réaffichées le temps de l'impression, puis remises dans leur état précédent une fois l'export terminé : le PDF contient donc toujours <strong>le mois complet</strong>, quel que soit l'état d'affichage à l'écran.</div>
+
+      <h3>7. Se repérer pendant le défilement</h3>
+      <ul>
+        <li><strong>Défilement vertical</strong> (vers le bas) : la barre d'outils, les boutons de semaine et la ligne des dates/en-têtes restent visibles en haut de l'écran ("figés"), pour toujours savoir quel jour correspond à quelle colonne, même après avoir descendu dans une longue liste de personnes.</li>
+        <li><strong>Défilement horizontal</strong> (vers la droite) : la ligne des dates/en-têtes figée se déplace <strong>en même temps</strong> que le tableau principal, pour rester alignée avec les bonnes colonnes.</li>
+      </ul>
+
+      <h3>8. Exporter le planning en PDF</h3>
+      <p>Le bouton <strong>📄 Exporter en PDF</strong> génère une version imprimable du planning, mise en page automatiquement pour tenir sur <strong>une seule page A4 en format paysage</strong>, avec :</p>
+      <ul>
+        <li>le bandeau d'en-tête (image) en haut de la page ;</li>
+        <li>le mois <strong>complet</strong>, même si certaines semaines étaient masquées à l'écran ;</li>
+        <li>les couleurs et pastilles d'activité conservées ;</li>
+        <li>une colonne "date" fusionnée avec les tâches, optimisée pour l'impression.</li>
+      </ul>
+      <ol>
+        <li>Cliquez sur <strong>📄 Exporter en PDF</strong>.</li>
+        <li>La boîte de dialogue d'impression de votre navigateur s'ouvre automatiquement.</li>
+        <li>Dans cette boîte de dialogue, choisissez la destination : <strong>"Enregistrer au format PDF"</strong> (ou "Microsoft Print to PDF" selon le navigateur) pour créer un fichier PDF, ou sélectionnez directement une imprimante pour imprimer sur papier.</li>
+        <li>Validez. Une fois l'impression/l'export terminé, l'écran revient automatiquement à son état d'origine (semaines masquées restaurées, etc.).</li>
+      </ol>
+      <div class="tip">🖨️ Le format A4 paysage et la mise sur une seule page sont <strong>automatiques</strong> : vous n'avez aucun réglage de mise en page à faire dans la boîte de dialogue d'impression.</div>
+
+      <h3>9. Bonnes pratiques et pièges à éviter</h3>
+      <ul>
+        <li>✅ <strong>Toujours valider une saisie de texte</strong> (Entrée ou clic en dehors) avant de passer à une autre case — une saisie non validée n'est pas enregistrée.</li>
+        <li>✅ <strong>Utiliser le menu déroulant</strong>, pas le clavier, pour les cases d'activité (Absences, Chantiers…) : elles ne sont pas éditables en texte libre.</li>
+        <li>⚠️ Masquer des semaines à l'écran est pratique pour naviguer, mais ne sert à rien pour "nettoyer" le PDF : l'export contient toujours tout le mois.</li>
+        <li>⚠️ En cas de très grand nombre de lignes ou colonnes, le défilement peut sembler moins fluide sur des ordinateurs anciens — c'est normal, aucune donnée n'est perdue.</li>
+      </ul>
+
+      <h3>10. Dépannage</h3>
+      <table>
+        <tr><th>Situation</th><th>Explication / solution</th></tr>
+        <tr><td>Un message d'erreur rouge apparaît en haut de l'écran</td><td>Le widget a rencontré un problème (connexion, données manquantes…). Le message donne le détail technique ; contactez la personne qui gère le classeur Grist si besoin.</td></tr>
+        <tr><td>Le tableau reste bloqué sur "Chargement…"</td><td>Aucune donnée n'a été reçue de Grist après quelques secondes. Vérifiez que le widget est bien rattaché à la bonne table/vue et que les colonnes attendues sont configurées.</td></tr>
+        <tr><td>Une case d'activité ne s'ouvre pas au clic</td><td>Vérifiez que vous cliquez bien sur une case du corps du tableau (pas sur la ligne des dates figée) et que vous n'êtes pas déjà en train d'éditer une autre case.</td></tr>
+        <tr><td>Le PDF n'affiche pas tout le mois</td><td>Ce cas ne devrait pas se produire (le mois complet est forcé à l'export) ; si c'est le cas, signalez-le : cela peut venir d'une donnée de date mal reconnue dans une colonne.</td></tr>
+        <tr><td>Le bandeau d'en-tête ne s'affiche pas dans le PDF</td><td>Attendez quelques instants avant de valider l'impression : l'image doit finir de se charger avant l'ouverture de la boîte de dialogue. Relancez l'export si besoin.</td></tr>
+      </table>
+
+      <h3>11. Aide-mémoire (1 page)</h3>
+      <table>
+        <tr><th>Action</th><th>Comment faire</th></tr>
+        <tr><td><strong>Saisir du texte</strong></td><td>Clic sur la case → taper → Entrée ou clic ailleurs</td></tr>
+        <tr><td><strong>Choisir une activité</strong></td><td>Clic sur la case → cocher dans le menu → Fermer</td></tr>
+        <tr><td><strong>Retirer une activité</strong></td><td>Rouvrir la case → décocher → Fermer</td></tr>
+        <tr><td><strong>Masquer une semaine</strong></td><td>Clic sur le bouton "Semaine X"</td></tr>
+        <tr><td><strong>Réafficher une semaine</strong></td><td>Recliquer sur le même bouton</td></tr>
+        <tr><td><strong>Exporter en PDF</strong></td><td>Bouton "📄 Exporter en PDF" → choisir "Enregistrer au format PDF"</td></tr>
+        <tr><td><strong>Repérer le matériel</strong></td><td>Automatique : ligne violette si le nom contient "Matériels"</td></tr>
+      </table>
+
+    </div>
+  </div>
 </div>
 
 <div class="week-buttons" id="weekButtons"></div>
@@ -1761,6 +2085,29 @@ function adjustPrintBannerHeight(printAppEl) {
 
   imgEl.style.setProperty("height", finalHeight.toFixed(1) + "px", "important");
 }
+
+// ============================================================
+// MODALE D'AIDE — guide d'utilisation (bouton ℹ️)
+// ============================================================
+function openHelpModal() {
+  if (typeof closeChoiceDropdown === "function") {
+    closeChoiceDropdown();
+  }
+  document.getElementById("helpModalOverlay").classList.add("open");
+}
+
+function closeHelpModal() {
+  document.getElementById("helpModalOverlay").classList.remove("open");
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    const overlay = document.getElementById("helpModalOverlay");
+    if (overlay && overlay.classList.contains("open")) {
+      closeHelpModal();
+    }
+  }
+});
 
 // ============================================================
 // EXPORT DU PLANNING EN PDF
