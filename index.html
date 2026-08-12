@@ -66,6 +66,14 @@
     --day-width: 111px;
     --cell-min-height: 70px;
     --cell-font-size: 13px;
+
+    /* Hauteurs mesurées dynamiquement en JS (voir updateStickyOffsets)
+       pour empiler correctement les éléments figés au défilement :
+       barre d'outils -> boutons de semaine -> en-tête du tableau ->
+       ligne des dates. */
+    --sticky-toolbar-h: 0px;
+    --sticky-weekbtns-h: 0px;
+    --sticky-thead-h: 0px;
   }
 
   body {
@@ -171,6 +179,14 @@
     justify-content: space-between;
     gap: 12px;
     margin-bottom: 8px;
+
+    /* Reste visible en haut de l'écran quand on défile vers le bas. */
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    background: #fff;
+    padding-top: 2px;
+    padding-bottom: 2px;
   }
 
   #status {
@@ -221,6 +237,38 @@
     flex-wrap: wrap;
     gap: 8px;
     margin-bottom: 10px;
+
+    /* Reste visible juste sous la barre d'outils au défilement. */
+    position: sticky;
+    top: var(--sticky-toolbar-h);
+    z-index: 39;
+    background: #fff;
+    padding-top: 2px;
+    padding-bottom: 2px;
+  }
+
+  /* ---- En-têtes du tableau et ligne des dates figés au défilement ----
+     L'empilement (toolbar -> boutons de semaine -> en-tête -> ligne des
+     dates) est calculé dynamiquement en JS (voir updateStickyOffsets),
+     qui pose les variables --sticky-*-h ci-dessus en fonction des
+     hauteurs réellement mesurées. */
+  #app thead th {
+    position: sticky;
+    top: calc(var(--sticky-toolbar-h) + var(--sticky-weekbtns-h));
+    z-index: 38;
+  }
+
+  #app tr.sticky-date-row td {
+    position: sticky;
+    top: calc(var(--sticky-toolbar-h) + var(--sticky-weekbtns-h) + var(--sticky-thead-h));
+    z-index: 37;
+  }
+
+  /* Les cases "Employé" de la ligne des dates n'ont pas de fond propre
+     par défaut (td.editable) : on leur en donne un pour qu'elles restent
+     bien opaques par-dessus les lignes qui défilent en dessous. */
+  #app tr.sticky-date-row td.editable {
+    background: #fff;
   }
 
   .week-btn {
@@ -1286,7 +1334,7 @@ function render(records, mappings) {
 
   records.forEach((record, rowIndex) => {
     const isDateRow = FREEZE_FIRST_ROW_AS_DATE && rowIndex === 0;
-    html += "<tr>";
+    html += isDateRow ? `<tr class="sticky-date-row">` : "<tr>";
 
     fixedKeys.forEach((key, i) => {
       const rawValue = record[key];
@@ -1346,7 +1394,35 @@ function render(records, mappings) {
   attachEditHandlers();
   attachChoiceHandlers();
   applyWeekVisibility(weekKeyGroups);
+  updateStickyOffsets();
 }
+
+// Mesure les hauteurs réelles de la barre d'outils, des boutons de
+// semaine et de l'en-tête du tableau, et les pose en variables CSS pour
+// empiler correctement les éléments figés au défilement (toolbar ->
+// boutons de semaine -> en-tête -> ligne des dates). Appelée après
+// chaque rendu et au redimensionnement de la fenêtre (le passage à la
+// ligne des boutons peut changer leur hauteur).
+function updateStickyOffsets() {
+  const toolbarEl = document.querySelector(".toolbar");
+  const weekButtonsEl = document.getElementById("weekButtons");
+  const theadEl = document.querySelector("#app thead");
+
+  const toolbarH = toolbarEl ? toolbarEl.getBoundingClientRect().height : 0;
+  const weekButtonsH = weekButtonsEl ? weekButtonsEl.getBoundingClientRect().height : 0;
+  const theadH = theadEl ? theadEl.getBoundingClientRect().height : 0;
+
+  const rootStyle = document.documentElement.style;
+  rootStyle.setProperty("--sticky-toolbar-h", toolbarH.toFixed(1) + "px");
+  rootStyle.setProperty("--sticky-weekbtns-h", weekButtonsH.toFixed(1) + "px");
+  rootStyle.setProperty("--sticky-thead-h", theadH.toFixed(1) + "px");
+}
+
+let _stickyResizeRaf = null;
+window.addEventListener("resize", () => {
+  if (_stickyResizeRaf) cancelAnimationFrame(_stickyResizeRaf);
+  _stickyResizeRaf = requestAnimationFrame(updateStickyOffsets);
+});
 
 // ============================================================
 // CASES TEXTE / DATE (édition directe)
