@@ -68,12 +68,10 @@
     --cell-font-size: 13px;
 
     /* Hauteurs mesurées dynamiquement en JS (voir updateStickyOffsets)
-       pour empiler correctement les éléments figés au défilement :
-       barre d'outils -> boutons de semaine -> en-tête du tableau ->
-       ligne des dates. */
+       pour placer le mini-tableau figé (en-tête + ligne des dates)
+       juste sous la barre d'outils et les boutons de semaine. */
     --sticky-toolbar-h: 0px;
     --sticky-weekbtns-h: 0px;
-    --sticky-thead-h: 0px;
   }
 
   body {
@@ -255,27 +253,37 @@
     padding-bottom: 2px;
   }
 
-  /* ---- En-têtes du tableau et ligne des dates figés au défilement ----
-     L'empilement (toolbar -> boutons de semaine -> en-tête -> ligne des
-     dates) est calculé dynamiquement en JS (voir updateStickyOffsets),
-     qui pose les variables --sticky-*-h ci-dessus en fonction des
-     hauteurs réellement mesurées. */
-  #app thead th {
+  /* ---- Mini-tableau figé (en-tête "Employé"/"Semaine X" + ligne des
+     dates) : un tableau à part, en dehors de .scroll-wrap, donc son
+     "position: sticky" se fige bien par rapport à la fenêtre (comme la
+     barre d'outils et les boutons de semaine, qui fonctionnent déjà
+     correctement pour la même raison). Son décalage horizontal est
+     synchronisé en JS avec le tableau principal (voir
+     syncStickyHeaderScroll), puisqu'il n'a pas sa propre barre de
+     défilement. */
+  .sticky-header-wrap {
     position: sticky;
     top: calc(var(--sticky-toolbar-h) + var(--sticky-weekbtns-h));
     z-index: 38;
+    overflow: hidden;
+    background: #fff;
   }
 
-  #app tr.sticky-date-row td {
-    position: sticky;
-    top: calc(var(--sticky-toolbar-h) + var(--sticky-weekbtns-h) + var(--sticky-thead-h));
-    z-index: 37;
+  .sticky-header-inner {
+    will-change: transform;
+  }
+
+  .sticky-header-inner table {
+    /* Évite toute marge/ombre qui décalerait l'alignement avec le
+       tableau principal juste en dessous. */
+    box-shadow: none;
+    margin: 0;
   }
 
   /* Les cases "Employé" de la ligne des dates n'ont pas de fond propre
      par défaut (td.editable) : on leur en donne un pour qu'elles restent
-     bien opaques par-dessus les lignes qui défilent en dessous. */
-  #app tr.sticky-date-row td.editable {
+     bien opaques (le mini-tableau figé doit rester lisible). */
+  .sticky-header-inner td.editable {
     background: #fff;
   }
 
@@ -387,6 +395,25 @@
       display: none !important;
     }
 
+    /* Le mini-tableau figé (en-tête + ligne des dates) n'a plus besoin
+       d'être "sticky" ni décalé horizontalement à l'impression : il
+       s'imprime simplement à sa position normale, juste au-dessus du
+       tableau principal (repli utilisé seulement si le tableau fusionné
+       coloré n'a pas pu être construit, voir exportPlanningPDF). */
+    .sticky-header-wrap {
+      position: static !important;
+      top: auto !important;
+      overflow: visible !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+
+    .sticky-header-inner {
+      transform: none !important;
+    }
+
     .scroll-wrap {
       display: block !important;
       overflow: visible !important;
@@ -396,7 +423,8 @@
       padding: 0 !important;
     }
 
-    #app {
+    #app,
+    #appHeader {
       display: block !important;
       width: 100% !important;
       max-width: 100% !important;
@@ -404,7 +432,8 @@
       padding: 0 !important;
     }
 
-    #app table {
+    #app table,
+    #appHeader table {
       display: table !important;
       width: 100% !important;
       max-width: 100% !important;
@@ -422,26 +451,32 @@
 
     /* Annule les largeurs fixes de l'écran (92px / 186px / 111px).
        Les colonnes sont redistribuées sur toute la largeur A4. */
-    #app table col {
+    #app table col,
+    #appHeader table col {
       width: auto !important;
       min-width: 0 !important;
       max-width: none !important;
     }
 
-    #app table col:first-child {
+    #app table col:first-child,
+    #appHeader table col:first-child {
       width: 8% !important;
     }
 
-    #app table col:nth-child(2) {
+    #app table col:nth-child(2),
+    #appHeader table col:nth-child(2) {
       width: 12% !important;
     }
 
-    #app table col:nth-child(n+3) {
+    #app table col:nth-child(n+3),
+    #appHeader table col:nth-child(n+3) {
       width: auto !important;
     }
 
     #app th,
-    #app td {
+    #app td,
+    #appHeader th,
+    #appHeader td {
       box-sizing: border-box !important;
       padding: 1px 2px !important;
       margin: 0 !important;
@@ -460,7 +495,9 @@
     }
 
     #app th.week-header,
-    #app th.fixed-header {
+    #app th.fixed-header,
+    #appHeader th.week-header,
+    #appHeader th.fixed-header {
       font-size: 6px !important;
       line-height: 1 !important;
       padding: 1px !important;
@@ -469,12 +506,16 @@
 
     #app td.editable,
     #app td.choice-cell,
-    #app td.date-cell {
+    #app td.date-cell,
+    #appHeader td.editable,
+    #appHeader td.choice-cell,
+    #appHeader td.date-cell {
       font-size: 5.5px !important;
       min-height: 0 !important;
     }
 
-    #app .chip {
+    #app .chip,
+    #appHeader .chip {
       display: inline-block !important;
       padding: 0 1px !important;
       margin: 0 1px 0 0 !important;
@@ -486,7 +527,8 @@
       print-color-adjust: exact !important;
     }
 
-    #app td.materiel-highlight {
+    #app td.materiel-highlight,
+    #appHeader td.materiel-highlight {
       -webkit-print-color-adjust: exact !important;
       print-color-adjust: exact !important;
     }
@@ -495,14 +537,19 @@
     #app table,
     #app thead,
     #app tbody,
-    #app tr {
+    #app tr,
+    #appHeader table,
+    #appHeader thead,
+    #appHeader tbody,
+    #appHeader tr {
       break-inside: avoid !important;
       page-break-inside: avoid !important;
     }
 
     /* Toutes les colonnes doivent apparaître dans l'export, même si
        l'utilisateur avait masqué une semaine dans l'affichage. */
-    #app col[class*="wk-"] {
+    #app col[class*="wk-"],
+    #appHeader col[class*="wk-"] {
       visibility: visible !important;
     }
   }
@@ -648,7 +695,16 @@
 
 <div class="week-buttons" id="weekButtons"></div>
 
-<div class="scroll-wrap">
+<!-- Mini-tableau toujours visible (en-tête "Employé"/"Semaine X" + ligne
+     des dates), généré par render() et synchronisé au défilement
+     horizontal du tableau principal (voir syncStickyHeaderScroll). -->
+<div class="sticky-header-wrap" id="stickyHeaderWrap">
+  <div class="sticky-header-inner" id="stickyHeaderInner">
+    <div id="appHeader"></div>
+  </div>
+</div>
+
+<div class="scroll-wrap" id="scrollWrap">
   <div id="app"></div>
 </div>
 
@@ -942,6 +998,15 @@ function updateWeekButtonStyles() {
 // ============================================================
 // LOGIQUE DU WIDGET
 // ============================================================
+
+// Synchronise le décalage horizontal du mini-tableau figé (en-tête +
+// ligne des dates) à chaque défilement latéral du tableau principal.
+// Le conteneur #scrollWrap est statique (jamais recréé par render()),
+// donc un seul écouteur suffit pour toute la durée de vie du widget.
+const __scrollWrapEl = document.getElementById("scrollWrap");
+if (__scrollWrapEl) {
+  __scrollWrapEl.addEventListener("scroll", syncStickyHeaderScroll);
+}
 
 try {
   clearTimeout(__gristApiTimeout);
@@ -1288,9 +1353,11 @@ function render(records, mappings) {
 
   const statusEl = document.getElementById("status");
   const appEl = document.getElementById("app");
+  const appHeaderEl = document.getElementById("appHeader");
 
   if (!records || records.length === 0) {
     appEl.innerHTML = '<div id="empty-msg">Aucune donnée à afficher.</div>';
+    if (appHeaderEl) appHeaderEl.innerHTML = "";
     statusEl.textContent = "";
     return;
   }
@@ -1299,6 +1366,7 @@ function render(records, mappings) {
     appEl.innerHTML =
       '<div id="empty-msg">⚙️ Configure d\'abord les colonnes : ouvre le panneau ' +
       '"Colonnes requises" à droite du widget dans Grist.</div>';
+    if (appHeaderEl) appHeaderEl.innerHTML = "";
     statusEl.textContent = "";
     return;
   }
@@ -1311,6 +1379,7 @@ function render(records, mappings) {
   const weekKeyGroups = computeWeekGroups(records, dayKeys);
   if (!weekKeyGroups) {
     appEl.innerHTML = buildDateDiagnosticHtml(records, dayKeys);
+    if (appHeaderEl) appHeaderEl.innerHTML = "";
     statusEl.textContent = "";
     return;
   }
@@ -1321,28 +1390,34 @@ function render(records, mappings) {
     dayChoiceMap[key] = isChoiceColumn(key, columnTypesCache[key], null);
   });
 
-  let html = "<table><colgroup>";
+  // Le <colgroup> (largeurs des colonnes) est IDENTIQUE dans les deux
+  // tableaux, pour que les colonnes du mini-tableau figé (en-tête + ligne
+  // des dates) s'alignent parfaitement avec celles du tableau principal.
+  let colgroupHtml = "<colgroup>";
   fixedKeys.forEach((key, i) => {
     const widthVar = i === 0 ? "var(--col1-width)" : "var(--col2-width)";
-    html += `<col style="width:${widthVar};">`;
+    colgroupHtml += `<col style="width:${widthVar};">`;
   });
   weekKeyGroups.forEach((group) => {
     group.keys.forEach(() => {
-      html += `<col class="wk-${group.weekIndex}" style="width:var(--day-width);">`;
+      colgroupHtml += `<col class="wk-${group.weekIndex}" style="width:var(--day-width);">`;
     });
   });
-  html += "</colgroup><thead><tr>";
+  colgroupHtml += "</colgroup>";
 
-  html += `<th class="fixed-header" colspan="${fixedKeys.length}">${escapeHtml(FIXED_MERGED_LABEL)}</th>`;
-
+  // ---- En-tête (Employé / Semaine X) : va dans le mini-tableau figé ----
+  let headHtml = "<thead><tr>";
+  headHtml += `<th class="fixed-header" colspan="${fixedKeys.length}">${escapeHtml(FIXED_MERGED_LABEL)}</th>`;
   weekKeyGroups.forEach((group) => {
-    html += `<th class="week-header" colspan="${group.keys.length}">${escapeHtml(group.label)}</th>`;
+    headHtml += `<th class="week-header" colspan="${group.keys.length}">${escapeHtml(group.label)}</th>`;
   });
-  html += "</tr></thead><tbody>";
+  headHtml += "</tr></thead>";
 
-  records.forEach((record, rowIndex) => {
-    const isDateRow = FREEZE_FIRST_ROW_AS_DATE && rowIndex === 0;
-    html += isDateRow ? `<tr class="sticky-date-row">` : "<tr>";
+  // ---- Génère le HTML d'UNE ligne (utilisé pour la ligne des dates,
+  // dans le mini-tableau figé, ET pour les lignes employé normales,
+  // dans le tableau principal) ----
+  function buildRowHtml(record, isDateRow) {
+    let rowHtml = "<tr>";
 
     fixedKeys.forEach((key, i) => {
       const rawValue = record[key];
@@ -1351,7 +1426,7 @@ function render(records, mappings) {
       const isFirstFixedCol = i === 0;
       const highlight =
         isFirstFixedCol && plainText.includes(MATERIEL_KEYWORD) ? " materiel-highlight" : "";
-      html += `<td class="editable${highlight}" data-row-id="${record.id}" data-col="${key}">${escapeHtml(plainText)}</td>`;
+      rowHtml += `<td class="editable${highlight}" data-row-id="${record.id}" data-col="${key}">${escapeHtml(plainText)}</td>`;
     });
 
     weekKeyGroups.forEach((group) => {
@@ -1364,26 +1439,43 @@ function render(records, mappings) {
 
         if (isChoiceCol && isDateRow) {
           const dateText = extractChoiceItems(rawValue).join(", ") || String(rawValue ?? "");
-          html += `<td class="editable date-cell" data-row-id="${record.id}" data-col="${key}" data-cell-type="date">${escapeHtml(dateText)}</td>`;
+          rowHtml += `<td class="editable date-cell" data-row-id="${record.id}" data-col="${key}" data-cell-type="date">${escapeHtml(dateText)}</td>`;
           return;
         }
 
         if (isChoiceCol) {
           const displayHtml = renderChips(extractChoiceItems(rawValue));
-          html += `<td class="choice-cell wk-${group.weekIndex}" data-row-id="${record.id}" data-col="${key}">${displayHtml}</td>`;
+          rowHtml += `<td class="choice-cell wk-${group.weekIndex}" data-row-id="${record.id}" data-col="${key}">${displayHtml}</td>`;
           return;
         }
 
         const displayHtml = isDateCol ? escapeHtml(formatDateValue(rawValue)) : escapeHtml(rawValue ?? "");
-        html += `<td class="editable wk-${group.weekIndex}" data-row-id="${record.id}" data-col="${key}">${displayHtml}</td>`;
+        rowHtml += `<td class="editable wk-${group.weekIndex}" data-row-id="${record.id}" data-col="${key}">${displayHtml}</td>`;
       });
     });
 
-    html += "</tr>";
-  });
+    rowHtml += "</tr>";
+    return rowHtml;
+  }
 
-  html += "</tbody></table>";
-  appEl.innerHTML = html;
+  const firstRecord = FREEZE_FIRST_ROW_AS_DATE ? records[0] : null;
+  const bodyRecords = FREEZE_FIRST_ROW_AS_DATE ? records.slice(1) : records;
+
+  // ---- Mini-tableau figé : en-tête + (éventuellement) ligne des dates ----
+  let headerTableHtml = `<table>${colgroupHtml}${headHtml}<tbody>`;
+  if (firstRecord) {
+    headerTableHtml += buildRowHtml(firstRecord, true);
+  }
+  headerTableHtml += "</tbody></table>";
+  if (appHeaderEl) appHeaderEl.innerHTML = headerTableHtml;
+
+  // ---- Tableau principal : toutes les autres lignes (défile normalement) ----
+  let bodyTableHtml = `<table>${colgroupHtml}<tbody>`;
+  bodyRecords.forEach((record) => {
+    bodyTableHtml += buildRowHtml(record, false);
+  });
+  bodyTableHtml += "</tbody></table>";
+  appEl.innerHTML = bodyTableHtml;
 
   const choiceColsCount = dayKeys.filter((k) => dayChoiceMap[k]).length;
   const diagPart = columnTypesLoadError
@@ -1403,27 +1495,35 @@ function render(records, mappings) {
   attachChoiceHandlers();
   applyWeekVisibility(weekKeyGroups);
   updateStickyOffsets();
+  syncStickyHeaderScroll();
 }
 
-// Mesure les hauteurs réelles de la barre d'outils, des boutons de
-// semaine et de l'en-tête du tableau, et les pose en variables CSS pour
-// empiler correctement les éléments figés au défilement (toolbar ->
-// boutons de semaine -> en-tête -> ligne des dates). Appelée après
-// chaque rendu et au redimensionnement de la fenêtre (le passage à la
-// ligne des boutons peut changer leur hauteur).
+// Mesure les hauteurs réelles de la barre d'outils et des boutons de
+// semaine, et les pose en variable CSS pour placer le mini-tableau figé
+// (en-tête + ligne des dates) juste en dessous. Appelée après chaque
+// rendu et au redimensionnement de la fenêtre (le passage à la ligne des
+// boutons peut changer leur hauteur).
 function updateStickyOffsets() {
   const toolbarEl = document.querySelector(".toolbar");
   const weekButtonsEl = document.getElementById("weekButtons");
-  const theadEl = document.querySelector("#app thead");
 
   const toolbarH = toolbarEl ? toolbarEl.getBoundingClientRect().height : 0;
   const weekButtonsH = weekButtonsEl ? weekButtonsEl.getBoundingClientRect().height : 0;
-  const theadH = theadEl ? theadEl.getBoundingClientRect().height : 0;
 
   const rootStyle = document.documentElement.style;
   rootStyle.setProperty("--sticky-toolbar-h", toolbarH.toFixed(1) + "px");
   rootStyle.setProperty("--sticky-weekbtns-h", weekButtonsH.toFixed(1) + "px");
-  rootStyle.setProperty("--sticky-thead-h", theadH.toFixed(1) + "px");
+}
+
+// Le mini-tableau figé (en-tête + ligne des dates) est EN DEHORS de la
+// zone qui défile horizontalement (.scroll-wrap), donc on synchronise
+// manuellement son décalage horizontal avec celui du tableau principal,
+// pour que les colonnes restent alignées quand on défile latéralement.
+function syncStickyHeaderScroll() {
+  const scrollWrapEl = document.getElementById("scrollWrap");
+  const headerScrollEl = document.getElementById("stickyHeaderInner");
+  if (!scrollWrapEl || !headerScrollEl) return;
+  headerScrollEl.style.transform = `translateX(${-scrollWrapEl.scrollLeft}px)`;
 }
 
 let _stickyResizeRaf = null;
@@ -1676,7 +1776,7 @@ function exportPlanningPDF() {
 
   // Force explicitement les colonnes de semaines à être visibles pendant
   // l'impression, même si un navigateur interprète différemment visibility:collapse.
-  document.querySelectorAll('#app col[class*="wk-"]').forEach((col) => {
+  document.querySelectorAll('#app col[class*="wk-"], #appHeader col[class*="wk-"]').forEach((col) => {
     col.style.visibility = "visible";
   });
 
