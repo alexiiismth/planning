@@ -572,6 +572,15 @@
     display: none !important;
   }
 
+  /* Le mini-tableau figé (en-tête "Employé"/"Semaine X" + ligne des
+     dates) est déjà repris dans le tableau fusionné #printApp
+     (colonne date fusionnée). Il ne doit donc PAS s'afficher en plus
+     au-dessus du bandeau image quand le mode fusion est actif, sinon
+     il apparaît par-dessus/au-dessus de l'image à l'impression. */
+  body.pdf-merge-mode .sticky-header-wrap {
+    display: none !important;
+  }
+
   body.pdf-merge-mode #printApp {
     display: block !important;
     width: 100% !important;
