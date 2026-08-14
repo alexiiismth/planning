@@ -130,22 +130,6 @@
     white-space: pre-wrap;
   }
 
-  td.choice-cell {
-    cursor: pointer;
-    min-height: var(--cell-min-height);
-    font-size: var(--cell-font-size);
-    white-space: pre-wrap;
-  }
-
-  td.choice-cell:hover {
-    background: var(--cell-hover);
-  }
-
-  td.choice-cell.dropdown-open {
-    outline: 2px solid #3498db;
-    background: #fffde7;
-  }
-
   td.materiel-highlight {
     background: #d8b4fe !important;
   }
@@ -470,6 +454,52 @@
     background: #fff;
   }
 
+  /* ---- Coin figé (les 2 colonnes "Employé" toujours visibles, même au
+     défilement horizontal) : voir le commentaire dans render() pour le
+     détail de pourquoi ce bloc est séparé du mini-tableau figé. ---- */
+  .sticky-corner {
+    position: sticky;
+    top: calc(var(--sticky-toolbar-h) + var(--sticky-weekbtns-h));
+    left: 0;
+    z-index: 45;
+    background: #fff;
+    width: fit-content;
+  }
+
+  .sticky-corner table {
+    box-shadow: none;
+    margin: 0;
+  }
+
+  .sticky-corner td.corner-cell {
+    background: #fff;
+    padding: 6px 8px;
+    font-size: 12px;
+    vertical-align: top;
+  }
+
+  .sticky-corner td.corner-cell.materiel-highlight {
+    background: #d8b4fe;
+  }
+
+  /* ---- Colonnes "Employé" figées horizontalement dans le tableau
+     principal, comme le sont déjà les boutons de semaine et la ligne des
+     dates verticalement. Le "left" exact (0 ou largeur de la 1re colonne)
+     est posé en inline-style au rendu (voir fixedColStickyAttrs). ---- */
+  td.fixed-col {
+    position: sticky;
+    z-index: 15;
+    background: #fff;
+  }
+
+  td.fixed-col.materiel-highlight {
+    background: #d8b4fe;
+  }
+
+  td.fixed-col-2 {
+    box-shadow: 2px 0 4px -2px rgba(0,0,0,0.25);
+  }
+
   .week-btn {
     padding: 6px 12px;
     border-radius: 6px;
@@ -486,54 +516,161 @@
     color: var(--week-bg);
   }
 
-  /* ---- Menu déroulant Choix multiples ---- */
-  .choice-dropdown {
-    position: fixed;
-    background: white;
-    border: 1px solid #ccc;
-    border-radius: 8px;
-    box-shadow: 0 6px 18px rgba(0,0,0,0.2);
-    padding: 8px;
-    z-index: 1000;
+  /* ---- Case divisible (jour x employé) : une bande par partie ---- */
+  td.split-cell {
+    cursor: pointer;
+    min-height: var(--cell-min-height);
+    font-size: var(--cell-font-size);
+    padding: 0;
+  }
+
+  td.split-cell:hover,
+  td.split-cell.dropdown-open {
+    outline: 2px solid #3498db;
+    outline-offset: -2px;
+  }
+
+  .split-part {
+    min-height: 18px;
+    padding: 3px 5px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: break-word;
+    border-bottom: 1px solid rgba(0,0,0,0.08);
+  }
+
+  .split-part:last-child {
+    border-bottom: none;
+  }
+
+  /* ---- Encadré d'édition d'une case (découpage en parties) ---- */
+  .split-editor-overlay {
     display: none;
-    min-width: 170px;
-    max-height: 260px;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 32, 0.5);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+    padding: 4vh 16px;
+  }
+
+  .split-editor-overlay.open {
+    display: flex;
+  }
+
+  .split-editor {
+    background: #fff;
+    width: min(480px, 100%);
+    max-height: 90vh;
     overflow-y: auto;
+    border-radius: 10px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+    padding: 16px 18px 18px;
   }
 
-  .choice-dropdown.open {
-    display: block;
+  .split-editor h3 {
+    margin: 0 0 12px;
+    font-size: 15px;
+    color: #1a252f;
   }
 
-  .choice-option {
+  .split-editor-parts-control {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 5px 6px;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .split-editor-parts-control button {
+    width: 30px;
+    height: 30px;
+    border-radius: 6px;
+    border: 2px solid var(--week-bg);
+    background: #fff;
+    color: var(--week-bg);
+    font-size: 16px;
+    font-weight: 700;
     cursor: pointer;
-    border-radius: 5px;
   }
 
-  .choice-option:hover {
-    background: #f0f2f5;
+  .split-editor-count {
+    font-size: 13px;
+    font-weight: 600;
+    color: #333;
   }
 
-  .choice-option input {
-    cursor: pointer;
+  .split-editor-part {
+    border: 1px solid #e0e4e8;
+    border-radius: 8px;
+    padding: 8px 10px;
+    margin-bottom: 10px;
   }
 
-  .choice-dropdown-close {
+  .split-editor-part label {
     display: block;
+    font-size: 11px;
+    color: #888;
+    font-weight: 600;
+    margin: 6px 0 3px;
+  }
+
+  .split-editor-part label:first-child {
+    margin-top: 0;
+  }
+
+  .split-editor-part select {
     width: 100%;
-    margin-top: 6px;
-    padding: 5px;
-    border: none;
+    padding: 6px;
     border-radius: 5px;
-    background: var(--week-bg);
-    color: white;
-    font-size: 12px;
+    border: 1px solid #ccc;
+    font-size: 12.5px;
+    box-sizing: border-box;
+  }
+
+  .split-editor-part textarea {
+    width: 100%;
+    box-sizing: border-box;
+    border-radius: 5px;
+    border: 1px solid #ccc;
+    padding: 6px;
+    font-size: 12.5px;
+    font-family: inherit;
+    resize: vertical;
+    min-height: 46px;
+  }
+
+  .split-editor-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  .split-editor-actions button {
+    flex: 1;
+    padding: 9px;
+    border-radius: 6px;
+    border: none;
+    font-size: 12.5px;
     font-weight: 600;
     cursor: pointer;
+  }
+
+  .split-editor-save {
+    background: var(--week-bg);
+    color: #fff;
+  }
+
+  .split-editor-cancel {
+    background: #eef1f4;
+    color: #333;
+  }
+
+  @media print {
+    .split-editor-overlay,
+    .sticky-corner {
+      display: none !important;
+    }
   }
 
   /* ============================================================
@@ -569,7 +706,8 @@
 
     .toolbar,
     .week-buttons,
-    .choice-dropdown,
+    .split-editor-overlay,
+    .sticky-corner,
     #fatal-error-box {
       display: none !important;
     }
@@ -688,10 +826,10 @@
     }
 
     #app td.editable,
-    #app td.choice-cell,
+    #app td.split-cell,
     #app td.date-cell,
     #appHeader td.editable,
-    #appHeader td.choice-cell,
+    #appHeader td.split-cell,
     #appHeader td.date-cell {
       font-size: 5.5px !important;
       min-height: 0 !important;
@@ -905,11 +1043,12 @@
       <p>Ce guide explique comment utiliser au quotidien le widget de planning mensuel (saisie, filtres par semaine, export PDF) sans connaissances techniques.</p>
 
       <h3>1. Vue d'ensemble</h3>
-      <p>Ce widget affiche un <strong>planning mensuel</strong> sous forme de tableau : une ligne par personne (ou par ressource), une colonne par jour du mois. Il permet à toute l'équipe de :</p>
+      <p>Ce widget affiche un <strong>planning mensuel</strong> sous forme de tableau : une ligne par personne (ou par ressource), une colonne par jour du mois (les colonnes ne portent plus que des dates). Il permet à toute l'équipe de :</p>
       <ul>
-        <li>🖊️ <strong>Saisir du texte libre</strong> dans une case (ex. commentaire, lieu de mission…) ;</li>
-        <li>🎨 <strong>Choisir une activité codée par couleur</strong> dans une case (Absences, Réunion, Formation…) ;</li>
+        <li>✂️ <strong>Découper une case</strong> en plusieurs parties, chacune avec sa propre activité colorée et son propre texte ;</li>
+        <li>🖊️ <strong>Saisir du texte libre</strong> dans les 2 colonnes "Employé" (ex. nom, poste…) ;</li>
         <li>🔧 <strong>Repérer en un coup d'œil les lignes "Matériels"</strong> grâce à une couleur dédiée ;</li>
+        <li>📌 <strong>Garder les colonnes "Employé" visibles</strong> même en faisant défiler le tableau horizontalement ;</li>
         <li>👁️ <strong>Afficher/masquer certaines semaines</strong> pour se concentrer sur une période ;</li>
         <li>📄 <strong>Exporter le mois complet en PDF</strong>, mis en page automatiquement sur une seule page A4 paysage, prêt à imprimer ou à partager.</li>
       </ul>
@@ -919,13 +1058,14 @@
         <tr><th>Zone</th><th>Rôle</th></tr>
         <tr><td><strong>Barre d'outils</strong> (tout en haut)</td><td>Contient le statut de chargement, le bouton ℹ️ d'aide et le bouton <strong>📄 Exporter en PDF</strong>. Reste visible même en faisant défiler la page.</td></tr>
         <tr><td><strong>Boutons de semaine</strong></td><td>Un bouton par semaine du mois (ex. <em>Semaine 32</em>). Permettent de masquer/afficher des colonnes de jours.</td></tr>
+        <tr><td><strong>Colonnes "Employé"</strong></td><td>Toujours visibles à gauche, même en faisant défiler le tableau horizontalement.</td></tr>
         <tr><td><strong>Ligne des dates + en-têtes</strong></td><td>Reste "collée" en haut de l'écran pendant le défilement vers le bas, pour toujours savoir à quelle date correspond chaque colonne.</td></tr>
-        <tr><td><strong>Corps du tableau</strong></td><td>Une ligne par personne/ressource, une colonne par jour. C'est ici que vous cliquez pour saisir ou choisir une valeur.</td></tr>
+        <tr><td><strong>Corps du tableau</strong></td><td>Une ligne par personne/ressource, une colonne par jour. C'est ici que vous cliquez pour découper une case et y saisir des activités.</td></tr>
       </table>
-      <div class="tip">💡 Le tableau peut être plus large que l'écran : faites défiler <strong>horizontalement</strong> (barre de défilement en bas, ou glisser à deux doigts sur trackpad) pour voir les jours suivants.</div>
+      <div class="tip">💡 Le tableau peut être plus large que l'écran : faites défiler <strong>horizontalement</strong> (barre de défilement en bas, ou glisser à deux doigts sur trackpad) pour voir les jours suivants. Les colonnes "Employé" restent en place.</div>
 
-      <h3>3. Modifier une case de texte libre</h3>
-      <p>Certaines colonnes acceptent du texte libre (commentaire, précision, nom de chantier…).</p>
+      <h3>3. Modifier les colonnes "Employé"</h3>
+      <p>Les 2 colonnes fixes ("Employé") acceptent du texte libre.</p>
       <ol>
         <li><strong>Cliquez une fois</strong> sur la case → elle devient éditable (fond jaune clair, contour bleu).</li>
         <li>Tapez votre texte.</li>
@@ -934,13 +1074,14 @@
       </ol>
       <div class="tip">⏎ Astuce : la touche Entrée valide directement, inutile de cliquer ailleurs.</div>
 
-      <h3>4. Choisir une activité (Absences, Chantiers, Réunion…)</h3>
-      <p>Les colonnes de type "activité" ne se remplissent pas au clavier : elles s'utilisent avec un <strong>menu déroulant à cases à cocher</strong>, ce qui garantit un affichage cohérent et coloré pour toute l'équipe.</p>
+      <h3>4. Découper une case et choisir des activités (Absences, Chantiers, Réunion…)</h3>
+      <p>Chaque case d'un jour peut être divisée en plusieurs parties, chacune avec sa propre couleur d'activité et son propre texte.</p>
       <ol>
-        <li><strong>Cliquez</strong> sur la case du jour concerné → un menu apparaît avec la liste des choix possibles.</li>
-        <li><strong>Cochez</strong> une ou plusieurs activités (une case peut cumuler plusieurs choix, ex. <em>Chantiers</em> + <em>Formation</em>).</li>
-        <li>Cliquez sur <strong>Fermer</strong> (ou cliquez n'importe où en dehors du menu) pour valider.</li>
-        <li>La case affiche alors une ou plusieurs <strong>pastilles de couleur</strong> ("chips") correspondant aux choix sélectionnés.</li>
+        <li><strong>Cliquez</strong> sur la case du jour concerné → un encadré s'ouvre.</li>
+        <li>Utilisez les boutons <strong>−</strong> / <strong>+</strong> pour choisir en combien de parties diviser la case.</li>
+        <li>Pour chaque partie : choisissez <strong>une</strong> activité dans la liste déroulante (ou "— Aucune —"), et tapez le texte souhaité en dessous.</li>
+        <li>Cliquez sur <strong>Enregistrer</strong> pour valider (ou <strong>Annuler</strong> pour fermer sans rien changer).</li>
+        <li>La case affiche alors une bande par partie, colorée selon l'activité choisie, avec son texte.</li>
       </ol>
 
       <p><strong>🎨 Légende des couleurs</strong></p>
@@ -956,7 +1097,7 @@
         <tr><td>Formation</td><td><span class="legend-swatch" style="background:#ffb6c1;"></span>Rose</td></tr>
         <tr><td>Grève</td><td><span class="legend-swatch" style="background:#fff;border:1px solid #999;"></span>Blanc avec bordure</td></tr>
       </table>
-      <div class="tip">💡 Pour <strong>retirer</strong> une activité déjà cochée : rouvrez la case, décochez l'activité, puis fermez le menu.</div>
+      <div class="tip">💡 Pour <strong>modifier</strong> une case déjà découpée : rouvrez-la, ajustez le nombre de parties, les activités ou le texte, puis Enregistrer.</div>
 
       <h3>5. Repérer le matériel</h3>
       <p>Toute ligne dont le nom (première colonne fixe) contient le mot <strong>"Matériels"</strong> est automatiquement <strong>surlignée en violet clair</strong>, à l'écran comme sur le PDF exporté. Aucune action n'est nécessaire : c'est une mise en forme automatique qui aide à distinguer d'un coup d'œil les lignes "personnes" des lignes "matériel/ressources".</p>
@@ -995,7 +1136,7 @@
       <h3>9. Bonnes pratiques et pièges à éviter</h3>
       <ul>
         <li>✅ <strong>Toujours valider une saisie de texte</strong> (Entrée ou clic en dehors) avant de passer à une autre case — une saisie non validée n'est pas enregistrée.</li>
-        <li>✅ <strong>Utiliser le menu déroulant</strong>, pas le clavier, pour les cases d'activité (Absences, Chantiers…) : elles ne sont pas éditables en texte libre.</li>
+        <li>✅ <strong>Cliquer sur "Enregistrer"</strong> dans l'encadré d'une case de jour, sinon le découpage/les activités saisies ne sont pas sauvegardés.</li>
         <li>⚠️ Masquer des semaines à l'écran est pratique pour naviguer, mais ne sert à rien pour "nettoyer" le PDF : l'export contient toujours tout le mois.</li>
         <li>⚠️ En cas de très grand nombre de lignes ou colonnes, le défilement peut sembler moins fluide sur des ordinateurs anciens — c'est normal, aucune donnée n'est perdue.</li>
       </ul>
@@ -1005,7 +1146,7 @@
         <tr><th>Situation</th><th>Explication / solution</th></tr>
         <tr><td>Un message d'erreur rouge apparaît en haut de l'écran</td><td>Le widget a rencontré un problème (connexion, données manquantes…). Le message donne le détail technique ; contactez la personne qui gère le classeur Grist si besoin.</td></tr>
         <tr><td>Le tableau reste bloqué sur "Chargement…"</td><td>Aucune donnée n'a été reçue de Grist après quelques secondes. Vérifiez que le widget est bien rattaché à la bonne table/vue et que les colonnes attendues sont configurées.</td></tr>
-        <tr><td>Une case d'activité ne s'ouvre pas au clic</td><td>Vérifiez que vous cliquez bien sur une case du corps du tableau (pas sur la ligne des dates figée) et que vous n'êtes pas déjà en train d'éditer une autre case.</td></tr>
+        <tr><td>L'encadré d'une case ne s'ouvre pas au clic</td><td>Vérifiez que vous cliquez bien sur une case du corps du tableau (pas sur la ligne des dates figée) et que vous n'êtes pas déjà en train d'éditer une autre case.</td></tr>
         <tr><td>Le PDF n'affiche pas tout le mois</td><td>Ce cas ne devrait pas se produire (le mois complet est forcé à l'export) ; si c'est le cas, signalez-le : cela peut venir d'une donnée de date mal reconnue dans une colonne.</td></tr>
         <tr><td>Le bandeau d'en-tête ne s'affiche pas dans le PDF</td><td>Attendez quelques instants avant de valider l'impression : l'image doit finir de se charger avant l'ouverture de la boîte de dialogue. Relancez l'export si besoin.</td></tr>
       </table>
@@ -1013,9 +1154,10 @@
       <h3>11. Aide-mémoire (1 page)</h3>
       <table>
         <tr><th>Action</th><th>Comment faire</th></tr>
-        <tr><td><strong>Saisir du texte</strong></td><td>Clic sur la case → taper → Entrée ou clic ailleurs</td></tr>
-        <tr><td><strong>Choisir une activité</strong></td><td>Clic sur la case → cocher dans le menu → Fermer</td></tr>
-        <tr><td><strong>Retirer une activité</strong></td><td>Rouvrir la case → décocher → Fermer</td></tr>
+        <tr><td><strong>Saisir le nom d'un employé</strong></td><td>Clic sur la case → taper → Entrée ou clic ailleurs</td></tr>
+        <tr><td><strong>Découper une case en parties</strong></td><td>Clic sur la case du jour → boutons − / + → Enregistrer</td></tr>
+        <tr><td><strong>Choisir l'activité d'une partie</strong></td><td>Dans l'encadré : liste déroulante de la partie concernée</td></tr>
+        <tr><td><strong>Modifier une case déjà découpée</strong></td><td>Rouvrir la case → ajuster → Enregistrer</td></tr>
         <tr><td><strong>Masquer une semaine</strong></td><td>Clic sur le bouton "Semaine X"</td></tr>
         <tr><td><strong>Réafficher une semaine</strong></td><td>Recliquer sur le même bouton</td></tr>
         <tr><td><strong>Exporter en PDF</strong></td><td>Bouton "📄 Exporter en PDF" → choisir "Enregistrer au format PDF"</td></tr>
@@ -1037,11 +1179,18 @@
   </div>
 </div>
 
+<!-- Coin figé (haut ET gauche) : duplique juste les 2 colonnes "Employé"
+     de l'en-tête + de la ligne des dates, toujours visible peu importe le
+     défilement horizontal (voir render() / syncStickyHeaderScroll). -->
+<div class="sticky-corner" id="stickyCorner"></div>
+
 <div class="scroll-wrap" id="scrollWrap">
   <div id="app"></div>
 </div>
 
-<div class="choice-dropdown" id="choiceDropdown"></div>
+<div class="split-editor-overlay" id="splitEditorOverlay">
+  <div class="split-editor" id="splitEditor"></div>
+</div>
 
 <!-- Tableau fusionné généré uniquement au moment de l'export PDF
      (voir buildPrintTableHtml / exportPlanningPDF). Reste vide et
@@ -1081,12 +1230,9 @@ const FREEZE_FIRST_ROW_AS_DATE = true;
 // ============================================================
 
 const hiddenWeeks = new Set(); // contient des numéros de semaine ISO (stables d'un rendu à l'autre)
-let dayChoiceMap = {};
 let columnTypesCache = {};
 let lastKeysSignature = null;
 let columnTypesLoadError = false;
-let activeDropdown = { rowId: null, colId: null };
-let dropdownPendingItems = []; // état local synchrone, évite les problèmes de timing entre coches rapides
 let currentWeekGroups = [];
 let lastWeekGroupsSignature = null;
 let lastRecords = null;
@@ -1435,41 +1581,6 @@ function isGristList(value) {
   return Array.isArray(value) && value[0] === "L";
 }
 
-// Ta convention : le DERNIER chiffre du nom de colonne indique le type
-// (impair = Choix multiples). Marche même avec des tirets ou un "$" devant.
-function isChoiceColByName(colId) {
-  const match = String(colId).match(/(\d+)\s*$/);
-  if (!match) return null;
-  return parseInt(match[1], 10) % 2 === 1;
-}
-
-function isChoiceColumn(colId, colType, rawValue) {
-  // On se fie d'abord aux vraies infos Grist (type de colonne, ou forme des
-  // données reçues), fiables quel que soit le mois. Le nom de colonne
-  // (dernier chiffre pair/impair) ne sert plus qu'en dernier recours, si le
-  // type n'a pas pu être déterminé (ex: erreur réseau lors du fetch des types).
-  if (colType === "ChoiceList") return true;
-  if (isGristList(rawValue)) return true;
-  if (colType) return false; // type connu et différent de ChoiceList : pas une colonne choix
-
-  const byName = isChoiceColByName(colId);
-  if (byName !== null) return byName;
-  return false;
-}
-
-function renderChips(items) {
-  if (!items || items.length === 0) return "";
-  return items
-    .map((item) => {
-      const color = CHOICE_COLORS[item];
-      const style = color
-        ? `background:${color.bg};color:${color.text};${color.border ? "border:" + color.border + ";" : ""}`
-        : "background:#eee;color:#333;";
-      return `<span class="chip" style="${style}">${escapeHtml(item)}</span>`;
-    })
-    .join("");
-}
-
 function extractChoiceItems(rawValue) {
   if (Array.isArray(rawValue)) {
     // Format standard Grist pour les listes : ["L", "Choix1", "Choix2", ...]
@@ -1482,13 +1593,6 @@ function extractChoiceItems(rawValue) {
     return rawValue.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
   }
   return [];
-}
-
-function formatDateValue(rawValue) {
-  if (typeof rawValue !== "number") return String(rawValue ?? "");
-  const d = new Date(rawValue * 1000);
-  if (isNaN(d.getTime())) return String(rawValue);
-  return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
 // ============================================================
@@ -1511,21 +1615,17 @@ function buildDayChunksWithWeek(records, dayKeys, weekKeyGroups) {
   return chunks;
 }
 
-// Pour un chunk (jour) donné, on récupère les choix sélectionnés dans
-// Dans le chunk d'un jour, la PREMIÈRE clé (chunk.keys[0]) est la colonne
-// "date" du planning Grist — c'est ELLE qui porte le choix sélectionné
-// (Absences, Chantiers, ...) et dont on veut la couleur, MAIS JAMAIS le
-// nom en texte dans le PDF. Les clés suivantes (chunk.keys.slice(1)) sont
-// la ou les colonne(s) "Travail/matériels" associée(s), qui contiennent
-// du texte libre à afficher tel quel dans le PDF.
-function getDateColumnChoiceItems(record, chunk) {
-  return extractChoiceItems(record[chunk.keys[0]]);
+// Chaque jour ne correspond plus qu'à UNE seule colonne Grist (chunk.keys[0]),
+// qui porte les parties saisies via l'encadré (voir parseCellParts). On en
+// tire la couleur (une par partie ayant une activité) et le texte (celui de
+// chaque partie, concaténé) pour l'export PDF.
+function getPrintCellParts(record, chunk) {
+  return parseCellParts(record[chunk.keys[0]]);
 }
 
-function getMaterielColumnsText(record, chunk) {
-  return chunk.keys
-    .slice(1)
-    .map((key) => String(record[key] ?? "").trim())
+function getPrintCellText(parts) {
+  return parts
+    .map((p) => (p.text || "").trim())
     .filter((t) => t.length > 0)
     .join(" ");
 }
@@ -1607,7 +1707,8 @@ function buildPrintTableHtml(records, mappings) {
   const fixedKeys = mappings.fixed;
   const dayKeysWithWeekends = trimPhantomTrailingDayColumns(records, mappings.days);
   const weekendDayKeys = computeWeekendKeySet(records, dayKeysWithWeekends);
-  const dayKeys = dayKeysWithWeekends.filter((key) => !weekendDayKeys.has(key));
+  const dayKeysWithMateriel = dayKeysWithWeekends.filter((key) => !weekendDayKeys.has(key));
+  const dayKeys = buildDayChunks(records, dayKeysWithMateriel).map((c) => c.keys[0]);
 
   const weekKeyGroups = computeWeekGroups(records, dayKeys);
   if (!weekKeyGroups) return null;
@@ -1666,11 +1767,11 @@ function buildPrintTableHtml(records, mappings) {
       //   n'est sélectionné), SANS jamais afficher son nom en texte ;
       // - le texte affiché est celui de la colonne "Travail/matériels"
       //   associée (texte libre, affiché tel quel).
-      const dateColItems = getDateColumnChoiceItems(record, chunk);
-      const colors = getChoiceColorsForItems(dateColItems);
-      const materielText = getMaterielColumnsText(record, chunk);
+      const cellParts = getPrintCellParts(record, chunk);
+      const colors = getChoiceColorsForItems(cellParts.map((p) => p.choice));
+      const cellText = getPrintCellText(cellParts);
       const styleAttr = colors.length ? ` style="${buildMergedCellStyle(colors)}"` : "";
-      html += `<td class="print-choice-cell"${styleAttr}>${escapeHtml(materielText)}</td>`;
+      html += `<td class="print-choice-cell"${styleAttr}>${escapeHtml(cellText)}</td>`;
     });
 
     html += "</tr>";
@@ -1707,7 +1808,13 @@ function render(records, mappings) {
   const fixedKeys = mappings.fixed;
   const dayKeysWithWeekends = trimPhantomTrailingDayColumns(records, mappings.days);
   const weekendDayKeys = computeWeekendKeySet(records, dayKeysWithWeekends);
-  const dayKeys = dayKeysWithWeekends.filter((key) => !weekendDayKeys.has(key));
+  const dayKeysWithMateriel = dayKeysWithWeekends.filter((key) => !weekendDayKeys.has(key));
+
+  // Nouveau fonctionnement : on ne garde plus que les colonnes qui portent
+  // effectivement une date (chaque jour = UNE seule colonne/case dans le
+  // tableau). Les éventuelles colonnes "Travail/matériels" qui suivaient la
+  // colonne de date ne sont plus prises en compte du tout.
+  const dayKeys = buildDayChunks(records, dayKeysWithMateriel).map((c) => c.keys[0]);
 
   const weekKeyGroups = computeWeekGroups(records, dayKeys);
   if (!weekKeyGroups) {
@@ -1717,11 +1824,6 @@ function render(records, mappings) {
     return;
   }
   currentWeekGroups = weekKeyGroups;
-
-  dayChoiceMap = {};
-  dayKeys.forEach((key) => {
-    dayChoiceMap[key] = isChoiceColumn(key, columnTypesCache[key], null);
-  });
 
   // Le <colgroup> (largeurs des colonnes) est IDENTIQUE dans les deux
   // tableaux, pour que les colonnes du mini-tableau figé (en-tête + ligne
@@ -1746,6 +1848,14 @@ function render(records, mappings) {
   });
   headHtml += "</tr></thead>";
 
+  // Renvoie la classe + le style "left" à poser sur une case des colonnes
+  // fixes ("Employé") pour qu'elle reste figée horizontalement, comme le
+  // sont déjà les boutons de semaine et la ligne des dates verticalement.
+  function fixedColStickyAttrs(i) {
+    const left = i === 0 ? "0px" : "var(--col1-width)";
+    return ` fixed-col fixed-col-${i + 1}" style="left:${left};` ;
+  }
+
   // ---- Génère le HTML d'UNE ligne (utilisé pour la ligne des dates,
   // dans le mini-tableau figé, ET pour les lignes employé normales,
   // dans le tableau principal) ----
@@ -1759,31 +1869,26 @@ function render(records, mappings) {
       const isFirstFixedCol = i === 0;
       const highlight =
         isFirstFixedCol && plainText.includes(MATERIEL_KEYWORD) ? " materiel-highlight" : "";
-      rowHtml += `<td class="editable${highlight}" data-row-id="${record.id}" data-col="${key}">${escapeHtml(plainText)}</td>`;
+      rowHtml += `<td class="editable${highlight}${fixedColStickyAttrs(i)}" data-row-id="${record.id}" data-col="${key}">${escapeHtml(plainText)}</td>`;
     });
 
     weekKeyGroups.forEach((group) => {
       group.keys.forEach((key) => {
         const rawValue = record[key];
         cellOriginalValues[`${record.id}_${key}`] = rawValue;
-        const colType = columnTypesCache[key];
-        const isChoiceCol = isChoiceColumn(key, colType, rawValue);
-        const isDateCol = !isChoiceCol && (colType === "Date" || (colType && colType.startsWith("DateTime")));
 
-        if (isChoiceCol && isDateRow) {
-          const dateText = extractChoiceItems(rawValue).join(", ") || String(rawValue ?? "");
+        if (isDateRow) {
+          // Ligne des dates : simple texte éditable (JJ/MM ou JJ/MM/AAAA).
+          const dateItems = extractChoiceItems(rawValue);
+          const dateText = dateItems.length ? dateItems.join(", ") : String(rawValue ?? "");
           rowHtml += `<td class="editable date-cell" data-row-id="${record.id}" data-col="${key}" data-cell-type="date">${escapeHtml(dateText)}</td>`;
           return;
         }
 
-        if (isChoiceCol) {
-          const displayHtml = renderChips(extractChoiceItems(rawValue));
-          rowHtml += `<td class="choice-cell wk-${group.weekIndex}" data-row-id="${record.id}" data-col="${key}">${displayHtml}</td>`;
-          return;
-        }
-
-        const displayHtml = isDateCol ? escapeHtml(formatDateValue(rawValue)) : escapeHtml(rawValue ?? "");
-        rowHtml += `<td class="editable wk-${group.weekIndex}" data-row-id="${record.id}" data-col="${key}">${displayHtml}</td>`;
+        // Case "employé" d'un jour donné : case divisible en plusieurs
+        // parties, chacune avec une couleur d'activité et un texte libre.
+        const parts = parseCellParts(rawValue);
+        rowHtml += `<td class="split-cell wk-${group.weekIndex}" data-row-id="${record.id}" data-col="${key}">${renderSplitCellContent(parts)}</td>`;
       });
     });
 
@@ -1802,6 +1907,38 @@ function render(records, mappings) {
   headerTableHtml += "</tbody></table>";
   if (appHeaderEl) appHeaderEl.innerHTML = headerTableHtml;
 
+  // ---- Coin figé (haut ET gauche) : les 2 colonnes "Employé" de l'en-tête
+  // + de la ligne des dates, dupliquées dans un petit bloc à part qui reste
+  // toujours visible en haut-à-gauche, quel que soit le défilement (le
+  // mini-tableau figé ci-dessus est lui-même déplacé horizontalement via
+  // "transform", ce qui empêche un simple position:sticky d'y fonctionner
+  // pour ses propres colonnes fixes — voir syncStickyHeaderScroll).
+  const cornerHeaderCell = `<th class="fixed-header" colspan="${fixedKeys.length}">${escapeHtml(FIXED_MERGED_LABEL)}</th>`;
+  let cornerDateRow = "";
+  if (firstRecord) {
+    cornerDateRow = "<tr>";
+    fixedKeys.forEach((key, i) => {
+      const rawValue = firstRecord[key];
+      const plainText = String(rawValue ?? "");
+      const isFirstFixedCol = i === 0;
+      const highlight =
+        isFirstFixedCol && plainText.includes(MATERIEL_KEYWORD) ? " materiel-highlight" : "";
+      // Note : PAS de classe "editable" ici — ce coin n'est qu'un affichage
+      // en lecture seule, dupliquant visuellement la vraie case (éditable,
+      // elle) du mini-tableau figé juste en dessous.
+      cornerDateRow += `<td class="corner-cell${highlight}">${escapeHtml(plainText)}</td>`;
+    });
+    cornerDateRow += "</tr>";
+  }
+  const cornerColgroupHtml =
+    "<colgroup>" +
+    fixedKeys.map((key, i) => `<col style="width:${i === 0 ? "var(--col1-width)" : "var(--col2-width)"};">`).join("") +
+    "</colgroup>";
+  const cornerHtml =
+    `<table>${cornerColgroupHtml}<thead><tr>${cornerHeaderCell}</tr></thead><tbody>${cornerDateRow}</tbody></table>`;
+  const stickyCornerEl = document.getElementById("stickyCorner");
+  if (stickyCornerEl) stickyCornerEl.innerHTML = cornerHtml;
+
   // ---- Tableau principal : toutes les autres lignes (défile normalement) ----
   let bodyTableHtml = `<table>${colgroupHtml}<tbody>`;
   bodyRecords.forEach((record) => {
@@ -1810,11 +1947,7 @@ function render(records, mappings) {
   bodyTableHtml += "</tbody></table>";
   appEl.innerHTML = bodyTableHtml;
 
-  const choiceColsCount = dayKeys.filter((k) => dayChoiceMap[k]).length;
-  const diagPart = columnTypesLoadError
-    ? " ⚠️ Erreur de lecture des types de colonnes (F12 pour la console)"
-    : ` • ${choiceColsCount} colonne(s) Choix multiples détectée(s)`;
-  statusEl.textContent = `${records.length} ligne(s) • ${weekKeyGroups.length} semaines (${fixedKeys.length + dayKeys.length} colonnes)${diagPart}`;
+  statusEl.textContent = `${records.length} ligne(s) • ${weekKeyGroups.length} semaines (${fixedKeys.length + dayKeys.length} colonnes)${columnTypesLoadError ? " ⚠️ Erreur de lecture des types de colonnes (F12 pour la console)" : ""}`;
 
   // Ne reconstruit les boutons que si la liste des semaines a changé
   // (évite de perdre l'état visuel des boutons à chaque petit rendu).
@@ -1825,7 +1958,7 @@ function render(records, mappings) {
   }
 
   attachEditHandlers();
-  attachChoiceHandlers();
+  attachSplitCellHandlers();
   applyWeekVisibility(weekKeyGroups);
   updateStickyOffsets();
   syncStickyHeaderScroll();
@@ -1930,92 +2063,201 @@ function placeCaretAtEnd(el) {
 }
 
 // ============================================================
-// CASES CHOIX MULTIPLES — menu déroulant à cases à cocher colorées
+// CASES DIVISIBLES — chaque case "employé" d'un jour peut être découpée
+// en plusieurs parties, chacune avec UNE activité (couleur) + un texte
+// libre, saisis dans un encadré qui s'ouvre au clic sur la case.
 // ============================================================
 
-function attachChoiceHandlers() {
-  document.querySelectorAll("td.choice-cell").forEach((cell) => {
-    cell.addEventListener("click", () => openChoiceDropdown(cell));
+const MAX_SPLIT_PARTS = 6;
+let activeSplitCell = { rowId: null, colId: null };
+let splitEditorParts = []; // état de travail local (copie), tant que l'encadré est ouvert
+
+// Lit la valeur brute Grist d'une case et la transforme en liste de
+// parties { choice, text }. Stockage courant : chaîne JSON
+// {"parts":[{"choice":"Absences","text":"..."}, ...]}. Les anciennes
+// valeurs (ChoiceList Grist, ou simple texte) sont converties au vol pour
+// rester lisibles.
+function parseCellParts(rawValue) {
+  if (typeof rawValue === "string" && rawValue.trim().length > 0) {
+    try {
+      const parsed = JSON.parse(rawValue);
+      if (parsed && Array.isArray(parsed.parts) && parsed.parts.length > 0) {
+        return parsed.parts.map((p) => ({
+          choice: typeof p.choice === "string" ? p.choice : "",
+          text: typeof p.text === "string" ? p.text : "",
+        }));
+      }
+    } catch (e) {
+      return [{ choice: "", text: rawValue }];
+    }
+  }
+  if (isGristList(rawValue)) {
+    const items = extractChoiceItems(rawValue);
+    if (items.length === 0) return [{ choice: "", text: "" }];
+    return items.map((choice) => ({ choice, text: "" }));
+  }
+  return [{ choice: "", text: "" }];
+}
+
+function serializeCellParts(parts) {
+  return JSON.stringify({ parts });
+}
+
+// Génère le HTML affiché dans la case (une bande par partie, colorée
+// selon l'activité choisie, avec son texte).
+function renderSplitCellContent(parts) {
+  if (!parts || parts.length === 0) return "";
+  return parts
+    .map((p) => {
+      const color = p.choice ? CHOICE_COLORS[p.choice] : null;
+      const style = color
+        ? `background:${color.bg};color:${color.text};${color.border ? "border-bottom:" + color.border + ";" : ""}`
+        : "background:transparent;color:#333;";
+      return `<div class="split-part" style="${style}">${escapeHtml(p.text || "")}</div>`;
+    })
+    .join("");
+}
+
+function attachSplitCellHandlers() {
+  document.querySelectorAll("td.split-cell").forEach((cell) => {
+    cell.addEventListener("click", () => openSplitEditor(cell));
   });
 }
 
-function openChoiceDropdown(cell) {
-  document.querySelectorAll("td.choice-cell.dropdown-open").forEach((c) => c.classList.remove("dropdown-open"));
+function openSplitEditor(cell) {
+  document.querySelectorAll("td.split-cell.dropdown-open").forEach((c) => c.classList.remove("dropdown-open"));
+  cell.classList.add("dropdown-open");
 
-  const dd = document.getElementById("choiceDropdown");
   const rowId = cell.dataset.rowId;
   const colId = cell.dataset.col;
-  activeDropdown = { rowId, colId };
+  activeSplitCell = { rowId, colId };
 
   const original = cellOriginalValues[`${rowId}_${colId}`];
-  console.log("Valeur brute Grist pour cette case:", original);
-  const selected = new Set(extractChoiceItems(original));
-  dropdownPendingItems = extractChoiceItems(original); // copie de travail synchrone
+  splitEditorParts = parseCellParts(original).map((p) => ({ ...p }));
 
-  dd.innerHTML = "";
-  Object.keys(CHOICE_COLORS).forEach((choice) => {
-    const color = CHOICE_COLORS[choice];
-    const label = document.createElement("label");
-    label.className = "choice-option";
+  renderSplitEditor();
+  document.getElementById("splitEditorOverlay").classList.add("open");
+}
 
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.checked = selected.has(choice);
-    checkbox.addEventListener("change", () => onChoiceToggle(choice, checkbox.checked));
+function closeSplitEditor() {
+  document.getElementById("splitEditorOverlay").classList.remove("open");
+  document.querySelectorAll("td.split-cell.dropdown-open").forEach((c) => c.classList.remove("dropdown-open"));
+  activeSplitCell = { rowId: null, colId: null };
+}
 
-    const chip = document.createElement("span");
-    chip.className = "chip";
-    chip.style.background = color.bg;
-    chip.style.color = color.text;
-    if (color.border) chip.style.border = color.border;
-    chip.textContent = choice;
+// (Re)construit le contenu de l'encadré à partir de splitEditorParts —
+// appelé à l'ouverture et à chaque changement du nombre de parties.
+function renderSplitEditor() {
+  const container = document.getElementById("splitEditor");
+  container.innerHTML = "";
 
-    label.appendChild(checkbox);
-    label.appendChild(chip);
-    dd.appendChild(label);
+  const title = document.createElement("h3");
+  title.textContent = "Modifier la case";
+  container.appendChild(title);
+
+  const control = document.createElement("div");
+  control.className = "split-editor-parts-control";
+
+  const minusBtn = document.createElement("button");
+  minusBtn.type = "button";
+  minusBtn.textContent = "−";
+  minusBtn.title = "Retirer une partie";
+  minusBtn.addEventListener("click", () => {
+    if (splitEditorParts.length > 1) {
+      splitEditorParts.pop();
+      renderSplitEditor();
+    }
   });
 
-  const closeBtn = document.createElement("button");
-  closeBtn.type = "button";
-  closeBtn.className = "choice-dropdown-close";
-  closeBtn.textContent = "Fermer";
-  closeBtn.addEventListener("click", closeChoiceDropdown);
-  dd.appendChild(closeBtn);
+  const countLabel = document.createElement("span");
+  countLabel.className = "split-editor-count";
+  countLabel.textContent = `${splitEditorParts.length} partie(s)`;
 
-  const rect = cell.getBoundingClientRect();
-  const ddWidth = 190;
-  let left = rect.left;
-  if (left + ddWidth > window.innerWidth) left = window.innerWidth - ddWidth - 8;
-  dd.style.top = `${rect.bottom + 4}px`;
-  dd.style.left = `${left}px`;
-  dd.classList.add("open");
-  cell.classList.add("dropdown-open");
+  const plusBtn = document.createElement("button");
+  plusBtn.type = "button";
+  plusBtn.textContent = "+";
+  plusBtn.title = "Ajouter une partie";
+  plusBtn.addEventListener("click", () => {
+    if (splitEditorParts.length < MAX_SPLIT_PARTS) {
+      splitEditorParts.push({ choice: "", text: "" });
+      renderSplitEditor();
+    }
+  });
+
+  control.appendChild(minusBtn);
+  control.appendChild(countLabel);
+  control.appendChild(plusBtn);
+  container.appendChild(control);
+
+  splitEditorParts.forEach((part, idx) => {
+    const partEl = document.createElement("div");
+    partEl.className = "split-editor-part";
+
+    const choiceLabel = document.createElement("label");
+    choiceLabel.textContent = `Partie ${idx + 1} — activité`;
+    partEl.appendChild(choiceLabel);
+
+    const select = document.createElement("select");
+    const noneOpt = document.createElement("option");
+    noneOpt.value = "";
+    noneOpt.textContent = "— Aucune —";
+    select.appendChild(noneOpt);
+    Object.keys(CHOICE_COLORS).forEach((choice) => {
+      const opt = document.createElement("option");
+      opt.value = choice;
+      opt.textContent = choice;
+      if (part.choice === choice) opt.selected = true;
+      select.appendChild(opt);
+    });
+    select.addEventListener("change", () => {
+      splitEditorParts[idx].choice = select.value;
+    });
+    partEl.appendChild(select);
+
+    const textLabel = document.createElement("label");
+    textLabel.textContent = "Texte";
+    partEl.appendChild(textLabel);
+
+    const textarea = document.createElement("textarea");
+    textarea.value = part.text || "";
+    textarea.addEventListener("input", () => {
+      splitEditorParts[idx].text = textarea.value;
+    });
+    partEl.appendChild(textarea);
+
+    container.appendChild(partEl);
+  });
+
+  const actions = document.createElement("div");
+  actions.className = "split-editor-actions";
+
+  const cancelBtn = document.createElement("button");
+  cancelBtn.type = "button";
+  cancelBtn.className = "split-editor-cancel";
+  cancelBtn.textContent = "Annuler";
+  cancelBtn.addEventListener("click", closeSplitEditor);
+
+  const saveBtn = document.createElement("button");
+  saveBtn.type = "button";
+  saveBtn.className = "split-editor-save";
+  saveBtn.textContent = "Enregistrer";
+  saveBtn.addEventListener("click", saveSplitEditor);
+
+  actions.appendChild(cancelBtn);
+  actions.appendChild(saveBtn);
+  container.appendChild(actions);
 }
 
-function closeChoiceDropdown() {
-  const dd = document.getElementById("choiceDropdown");
-  dd.classList.remove("open");
-  document.querySelectorAll("td.choice-cell.dropdown-open").forEach((c) => c.classList.remove("dropdown-open"));
-  activeDropdown = { rowId: null, colId: null };
-}
-
-async function onChoiceToggle(choice, isChecked) {
-  const { rowId, colId } = activeDropdown;
+async function saveSplitEditor() {
+  const { rowId, colId } = activeSplitCell;
   if (!rowId || !colId) return;
 
-  // Mise à jour SYNCHRONE de l'état partagé avant tout appel réseau,
-  // pour que chaque coche (même rapide) parte toujours de l'état le plus à jour.
-  if (isChecked) {
-    if (!dropdownPendingItems.includes(choice)) dropdownPendingItems.push(choice);
-  } else {
-    dropdownPendingItems = dropdownPendingItems.filter((i) => i !== choice);
-  }
-  const itemsSnapshot = [...dropdownPendingItems];
-  const valueToSend = ["L", ...itemsSnapshot];
+  const partsToSave = splitEditorParts.map((p) => ({ choice: p.choice || "", text: p.text || "" }));
+  const valueToSend = serializeCellParts(partsToSave);
 
-  // Affichage optimiste immédiat
-  const cell = document.querySelector(`td.choice-cell[data-row-id="${rowId}"][data-col="${colId}"]`);
-  if (cell) cell.innerHTML = renderChips(itemsSnapshot);
+  // Affichage optimiste immédiat.
+  const cell = document.querySelector(`td.split-cell[data-row-id="${rowId}"][data-col="${colId}"]`);
+  if (cell) cell.innerHTML = renderSplitCellContent(partsToSave);
 
   try {
     await grist.selectedTable.update({ id: Number(rowId), fields: { [colId]: valueToSend } });
@@ -2024,15 +2266,19 @@ async function onChoiceToggle(choice, isChecked) {
     console.error("Erreur d'écriture Grist:", err);
     document.getElementById("status").textContent = "Erreur lors de l'enregistrement.";
   }
+  closeSplitEditor();
 }
 
-// Ferme le menu si on clique en dehors
+// Ferme l'encadré si on clique en dehors, ou avec Échap.
 document.addEventListener("click", (e) => {
-  const dd = document.getElementById("choiceDropdown");
-  if (!dd.classList.contains("open")) return;
-  if (dd.contains(e.target)) return;
-  if (e.target.closest && e.target.closest("td.choice-cell")) return;
-  closeChoiceDropdown();
+  const overlay = document.getElementById("splitEditorOverlay");
+  if (!overlay || !overlay.classList.contains("open")) return;
+  if (e.target === overlay) closeSplitEditor();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  const overlay = document.getElementById("splitEditorOverlay");
+  if (overlay && overlay.classList.contains("open")) closeSplitEditor();
 });
 
 function escapeHtml(str) {
@@ -2090,8 +2336,8 @@ function adjustPrintBannerHeight(printAppEl) {
 // MODALE D'AIDE — guide d'utilisation (bouton ℹ️)
 // ============================================================
 function openHelpModal() {
-  if (typeof closeChoiceDropdown === "function") {
-    closeChoiceDropdown();
+  if (typeof closeSplitEditor === "function") {
+    closeSplitEditor();
   }
   document.getElementById("helpModalOverlay").classList.add("open");
 }
@@ -2118,8 +2364,8 @@ document.addEventListener("keydown", (e) => {
 // et la vue mensuelle sur une seule page.
 function exportPlanningPDF() {
   // Ferme un éventuel menu de choix ouvert avant l'impression.
-  if (typeof closeChoiceDropdown === "function") {
-    closeChoiceDropdown();
+  if (typeof closeSplitEditor === "function") {
+    closeSplitEditor();
   }
 
   // Le PDF doit toujours contenir le mois COMPLET.
