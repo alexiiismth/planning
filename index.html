@@ -455,11 +455,23 @@
   }
 
   /* ---- Coin figé (les 2 colonnes "Employé" toujours visibles, même au
-     défilement horizontal) : voir le commentaire dans render() pour le
-     détail de pourquoi ce bloc est séparé du mini-tableau figé. ---- */
+     défilement horizontal) ----
+     "sticky-header-inner" (juste au-dessus) est déplacé horizontalement
+     via "transform: translateX(...)" en JS pour suivre le défilement du
+     tableau principal (il n'a pas de scrollbar à lui). Un transform CSS
+     déplace TOUT son contenu, y compris d'éventuelles cases en
+     "position: sticky" à l'intérieur — donc impossible de figer les 2
+     colonnes "Employé" DANS ce bloc-là.
+     Solution : ce petit tableau, séparé, est un enfant en
+     "position: absolute" de ".sticky-header-wrap" (qui sert de repère
+     grâce à "position: sticky" ci-dessus). Étant en position absolue, il
+     NE PREND AUCUNE PLACE dans la page (contrairement à "sticky" tout
+     seul, qui reste un bloc normal tant que rien ne le fait "coller") et
+     se superpose donc exactement, sans décalage, sur le début du
+     mini-tableau au-dessus. */
   .sticky-corner {
-    position: sticky;
-    top: calc(var(--sticky-toolbar-h) + var(--sticky-weekbtns-h));
+    position: absolute;
+    top: 0;
     left: 0;
     z-index: 45;
     background: #fff;
@@ -1008,13 +1020,33 @@
     color: #333 !important;
   }
 
-  /* Cases "Travail/matériels" fusionnées : blanches par défaut, la
-     couleur n'est appliquée que via le style inline quand un ou
-     plusieurs choix sont sélectionnés (voir buildPrintTableHtml). */
+  /* Cases "jour" fusionnées : chaque partie créée dans l'encadré (voir
+     parseCellParts / renderSplitCellContent) est affichée comme une
+     bande empilée, avec sa propre couleur de fond et son propre texte —
+     exactement comme à l'écran, en plus compact. */
   body.pdf-merge-mode #printApp td.print-choice-cell {
     text-align: center !important;
     background: #ffffff !important;
     color: #333 !important;
+    padding: 0 !important;
+    vertical-align: top !important;
+  }
+
+  body.pdf-merge-mode #printApp td.print-choice-cell .split-part {
+    padding: 1px 2px !important;
+    font-size: 5.5px !important;
+    line-height: 1.05 !important;
+    min-height: 0 !important;
+    border-bottom: 0.5px solid rgba(0,0,0,0.18) !important;
+    text-align: center !important;
+    /* La couleur de texte n'est PAS forcée ici : chaque partie garde la
+       couleur de texte choisie pour son activité (voir CHOICE_COLORS),
+       posée en style inline par renderSplitCellContent, pour rester
+       lisible sur les fonds foncés (Réunion, Recherche…). */
+  }
+
+  body.pdf-merge-mode #printApp td.print-choice-cell .split-part:last-child {
+    border-bottom: none !important;
   }
 
   body.pdf-merge-mode #printApp table,
@@ -1185,16 +1217,20 @@
 <!-- Mini-tableau toujours visible (en-tête "Employé"/"Semaine X" + ligne
      des dates), généré par render() et synchronisé au défilement
      horizontal du tableau principal (voir syncStickyHeaderScroll). -->
+<!-- Mini-tableau toujours visible (en-tête "Employé"/"Semaine X" + ligne
+     des dates), généré par render() et synchronisé au défilement
+     horizontal du tableau principal (voir syncStickyHeaderScroll).
+     Le "coin figé" (2 colonnes "Employé") est un enfant en position
+     absolue à l'intérieur : il se superpose exactement sur le début du
+     mini-tableau SANS prendre de place dans la page, et reste immobile
+     même quand "sticky-header-inner" est déplacé horizontalement via
+     "transform" pour suivre le défilement du tableau principal. -->
 <div class="sticky-header-wrap" id="stickyHeaderWrap">
   <div class="sticky-header-inner" id="stickyHeaderInner">
     <div id="appHeader"></div>
   </div>
+  <div class="sticky-corner" id="stickyCorner"></div>
 </div>
-
-<!-- Coin figé (haut ET gauche) : duplique juste les 2 colonnes "Employé"
-     de l'en-tête + de la ligne des dates, toujours visible peu importe le
-     défilement horizontal (voir render() / syncStickyHeaderScroll). -->
-<div class="sticky-corner" id="stickyCorner"></div>
 
 <div class="scroll-wrap" id="scrollWrap">
   <div id="app"></div>
@@ -1628,44 +1664,12 @@ function buildDayChunksWithWeek(records, dayKeys, weekKeyGroups) {
 }
 
 // Chaque jour ne correspond plus qu'à UNE seule colonne Grist (chunk.keys[0]),
-// qui porte les parties saisies via l'encadré (voir parseCellParts). On en
-// tire la couleur (une par partie ayant une activité) et le texte (celui de
-// chaque partie, concaténé) pour l'export PDF.
+// qui porte les parties saisies via l'encadré (voir parseCellParts). On
+// réutilise renderSplitCellContent (même fonction que pour l'écran) pour
+// que le PDF affiche exactement les mêmes bandes colorées + textes que le
+// tableau à l'écran, plutôt qu'un simple dégradé de fond.
 function getPrintCellParts(record, chunk) {
   return parseCellParts(record[chunk.keys[0]]);
-}
-
-function getPrintCellText(parts) {
-  return parts
-    .map((p) => (p.text || "").trim())
-    .filter((t) => t.length > 0)
-    .join(" ");
-}
-
-function getChoiceColorsForItems(items) {
-  return items
-    .map((item) => (CHOICE_COLORS[item] ? CHOICE_COLORS[item].bg : null))
-    .filter(Boolean);
-}
-
-// Construit le style de fond de case : une seule couleur si un seul
-// choix, sinon un dégradé "en escalier" (bandes horizontales de même
-// hauteur, du haut vers le bas) pour représenter plusieurs choix sans
-// couper la case en deux visuellement de façon abrupte au milieu.
-function buildMergedCellStyle(colors) {
-  if (!colors || colors.length === 0) return "";
-  if (colors.length === 1) {
-    return `background:${colors[0]} !important;color:#111 !important;text-shadow:0 0 1px #fff,0 0 1px #fff;`;
-  }
-  const n = colors.length;
-  const stops = colors
-    .map((c, i) => {
-      const start = ((i / n) * 100).toFixed(2);
-      const end = (((i + 1) / n) * 100).toFixed(2);
-      return `${c} ${start}%, ${c} ${end}%`;
-    })
-    .join(", ");
-  return `background:linear-gradient(to bottom, ${stops}) !important;color:#111 !important;text-shadow:0 0 1px #fff,0 0 1px #fff;`;
 }
 
 // Police et taille EXACTEMENT utilisées pour les cellules dans le PDF
@@ -1780,10 +1784,7 @@ function buildPrintTableHtml(records, mappings) {
       // - le texte affiché est celui de la colonne "Travail/matériels"
       //   associée (texte libre, affiché tel quel).
       const cellParts = getPrintCellParts(record, chunk);
-      const colors = getChoiceColorsForItems(cellParts.map((p) => p.choice));
-      const cellText = getPrintCellText(cellParts);
-      const styleAttr = colors.length ? ` style="${buildMergedCellStyle(colors)}"` : "";
-      html += `<td class="print-choice-cell"${styleAttr}>${escapeHtml(cellText)}</td>`;
+      html += `<td class="print-choice-cell">${renderSplitCellContent(cellParts)}</td>`;
     });
 
     html += "</tr>";
