@@ -1339,6 +1339,42 @@ function buildDayChunks(records, dayKeys) {
   return chunks;
 }
 
+// Les colonnes de jours sont mappées dans Grist (panneau "Colonnes de
+// dates/tâches") dans l'ordre où l'utilisateur les a ajoutées — PAS
+// forcément dans l'ordre chronologique. C'est notamment le cas quand on
+// ajoute, dans le tableau d'un mois, des colonnes de jours qui appartiennent
+// en réalité au mois précédent ou suivant (pour qu'une semaine à cheval sur
+// deux mois apparaisse en entier dans les deux tableaux) : ces colonnes sont
+// généralement ajoutées/mappées APRÈS les colonnes déjà existantes, donc en
+// fin de liste, alors qu'elles doivent apparaître AVANT (ou après) les
+// autres jours du tableau.
+//
+// On ne se fie donc plus du tout à l'ordre de mapping : on retrie les
+// colonnes en fonction de la VRAIE date lue dans chacune (format JJ/MM/AAAA),
+// toutes années/mois confondus. Les colonnes sans date reconnaissable (cases
+// vides, jours "fantômes" d'un gabarit à 31 colonnes pour un mois plus
+// court, etc.) sont replacées à la fin, dans leur ordre d'origine, pour que
+// trimPhantomTrailingDayColumns() puisse continuer à les repérer et les
+// retirer normalement.
+function sortDayKeysByDate(records, dayKeys) {
+  if (!dayKeys || dayKeys.length === 0) return dayKeys;
+
+  const withDates = dayKeys.map((key, originalIndex) => ({
+    key,
+    date: findFirstDateInColumn(records, key),
+    originalIndex,
+  }));
+
+  withDates.sort((a, b) => {
+    if (a.date && b.date) return a.date - b.date;
+    if (a.date && !b.date) return -1;
+    if (!a.date && b.date) return 1;
+    return a.originalIndex - b.originalIndex;
+  });
+
+  return withDates.map((item) => item.key);
+}
+
 // Certains mois ont moins de 31 jours (ex: septembre = 30). Le tableau étant
 // structuré sur un gabarit fixe (souvent jusqu'à 31 jours), les colonnes des
 // jours qui n'existent pas dans le mois en cours n'ont AUCUNE date (puisque
@@ -1721,7 +1757,8 @@ function buildPrintTableHtml(records, mappings) {
   if (!records || records.length === 0 || !mappings || !mappings.fixed || !mappings.days) return null;
 
   const fixedKeys = mappings.fixed;
-  const dayKeysWithWeekends = trimPhantomTrailingDayColumns(records, mappings.days);
+  const sortedDayKeys = sortDayKeysByDate(records, mappings.days);
+  const dayKeysWithWeekends = trimPhantomTrailingDayColumns(records, sortedDayKeys);
   const weekendDayKeys = computeWeekendKeySet(records, dayKeysWithWeekends);
   const dayKeysWithMateriel = dayKeysWithWeekends.filter((key) => !weekendDayKeys.has(key));
   const dayKeys = buildDayChunks(records, dayKeysWithMateriel).map((c) => c.keys[0]);
@@ -1819,7 +1856,8 @@ function render(records, mappings) {
   }
 
   const fixedKeys = mappings.fixed;
-  const dayKeysWithWeekends = trimPhantomTrailingDayColumns(records, mappings.days);
+  const sortedDayKeys = sortDayKeysByDate(records, mappings.days);
+  const dayKeysWithWeekends = trimPhantomTrailingDayColumns(records, sortedDayKeys);
   const weekendDayKeys = computeWeekendKeySet(records, dayKeysWithWeekends);
   const dayKeysWithMateriel = dayKeysWithWeekends.filter((key) => !weekendDayKeys.has(key));
 
