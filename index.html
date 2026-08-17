@@ -463,10 +463,18 @@
     left: 0;
     z-index: 45;
     background: #fff;
-    width: fit-content;
+    /* Largeur FIXE (les 2 colonnes "Employé" seulement) : sans ça, le
+       <table> à l'intérieur (qui a "width:100%" par défaut, voir règle
+       globale plus haut) s'étire sur toute la largeur disponible et
+       "casse" l'alignement (effet "ligne Employé/Nom-Prénom en trop"). */
+    width: calc(var(--col1-width) + var(--col2-width));
+    overflow: hidden;
   }
 
   .sticky-corner table {
+    /* Annule le "width:100%" de la règle globale "table" plus haut : ce
+       mini-tableau ne doit faire QUE la largeur de ses 2 colonnes. */
+    width: calc(var(--col1-width) + var(--col2-width));
     box-shadow: none;
     margin: 0;
   }
