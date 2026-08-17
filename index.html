@@ -540,12 +540,19 @@
     color: var(--week-bg);
   }
 
-  /* ---- Case divisible (jour x employé) : une bande par partie ---- */
+  /* ---- Case divisible (jour x employé) : une bande par partie ----
+     display:flex en colonne sur la <td> + flex:1 sur chaque bande :
+     ainsi, si la ligne (tr) s'agrandit à cause d'une autre case du
+     même jour (ex. un collègue avec 2 activités ce jour-là), les
+     bandes de couleur de CETTE case s'étirent pour occuper toute la
+     hauteur disponible, quel que soit leur nombre. */
   td.split-cell {
     cursor: pointer;
     min-height: var(--cell-min-height);
     font-size: var(--cell-font-size);
     padding: 0;
+    display: flex;
+    flex-direction: column;
   }
 
   td.split-cell:hover,
@@ -555,6 +562,7 @@
   }
 
   .split-part {
+    flex: 1 1 0;
     min-height: 18px;
     padding: 3px 5px;
     white-space: pre-wrap;
@@ -1030,9 +1038,15 @@
     color: #333 !important;
     padding: 0 !important;
     vertical-align: top !important;
+    display: flex !important;
+    flex-direction: column !important;
   }
 
+  /* Comme à l'écran : chaque bande s'étire pour occuper toute la
+     hauteur de la case, même si la ligne s'agrandit à cause d'une
+     autre case (jour) du même employé ayant plus d'activités. */
   body.pdf-merge-mode #printApp td.print-choice-cell .split-part {
+    flex: 1 1 0 !important;
     padding: 1px 2px !important;
     font-size: 5.5px !important;
     line-height: 1.05 !important;
