@@ -541,24 +541,31 @@
   }
 
   /* ---- Case divisible (jour x employé) : une bande par partie ----
-     display:flex en colonne sur la <td> + flex:1 sur chaque bande :
-     ainsi, si la ligne (tr) s'agrandit à cause d'une autre case du
-     même jour (ex. un collègue avec 2 activités ce jour-là), les
-     bandes de couleur de CETTE case s'étirent pour occuper toute la
-     hauteur disponible, quel que soit leur nombre. */
+     La <td> reste une vraie cellule de tableau normale (display par
+     défaut) pour ne jamais casser la mise en page du tableau. C'est le
+     conteneur interne .split-cell-inner qui est en flex colonne avec
+     height:100%, afin que ses bandes (.split-part) s'étirent pour
+     occuper toute la hauteur de la case, même si la ligne s'agrandit
+     à cause d'une autre case du même jour (ex. un collègue avec 2
+     activités ce jour-là) — quel que soit leur nombre. */
   td.split-cell {
     cursor: pointer;
     min-height: var(--cell-min-height);
     font-size: var(--cell-font-size);
     padding: 0;
-    display: flex;
-    flex-direction: column;
   }
 
   td.split-cell:hover,
   td.split-cell.dropdown-open {
     outline: 2px solid #3498db;
     outline-offset: -2px;
+  }
+
+  .split-cell-inner {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: var(--cell-min-height);
   }
 
   .split-part {
@@ -1038,13 +1045,20 @@
     color: #333 !important;
     padding: 0 !important;
     vertical-align: top !important;
-    display: flex !important;
-    flex-direction: column !important;
   }
 
-  /* Comme à l'écran : chaque bande s'étire pour occuper toute la
-     hauteur de la case, même si la ligne s'agrandit à cause d'une
-     autre case (jour) du même employé ayant plus d'activités. */
+  /* Comme à l'écran : le conteneur interne (.split-cell-inner) est en
+     flex colonne avec height:100%, pour que les bandes s'étirent et
+     occupent toute la hauteur de la case, même si la ligne s'agrandit
+     à cause d'une autre case (jour) du même employé ayant plus
+     d'activités. La <td> reste une cellule de tableau normale. */
+  body.pdf-merge-mode #printApp td.print-choice-cell .split-cell-inner {
+    display: flex !important;
+    flex-direction: column !important;
+    height: 100% !important;
+    min-height: 0 !important;
+  }
+
   body.pdf-merge-mode #printApp td.print-choice-cell .split-part {
     flex: 1 1 0 !important;
     padding: 1px 2px !important;
@@ -2169,10 +2183,14 @@ function serializeCellParts(parts) {
 }
 
 // Génère le HTML affiché dans la case (une bande par partie, colorée
-// selon l'activité choisie, avec son texte).
+// selon l'activité choisie, avec son texte). Les bandes sont enveloppées
+// dans un conteneur interne (.split-cell-inner) en flex colonne avec
+// height:100%, pour qu'elles se répartissent toute la hauteur de la
+// case même si la ligne s'agrandit (voir CSS .split-cell-inner /
+// .split-part). La <td> elle-même reste une cellule de tableau normale.
 function renderSplitCellContent(parts) {
   if (!parts || parts.length === 0) return "";
-  return parts
+  const inner = parts
     .map((p) => {
       const color = p.choice ? CHOICE_COLORS[p.choice] : null;
       const style = color
@@ -2181,6 +2199,7 @@ function renderSplitCellContent(parts) {
       return `<div class="split-part" style="${style}">${escapeHtml(p.text || "")}</div>`;
     })
     .join("");
+  return `<div class="split-cell-inner">${inner}</div>`;
 }
 
 function attachSplitCellHandlers() {
