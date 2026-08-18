@@ -2,6 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
+<meta name="color-scheme" content="light only">
 <title>Planning Août 2026 - Widget Grist</title>
 <script>
   // ============================================================
@@ -53,12 +54,25 @@
   onerror="showFatalError('Impossible de charger grist-plugin-api.js (CDN injoignable).', 'Vérifie ta connexion internet ou si docs.getgrist.com est bloqué par le réseau/pare-feu.');"
 ></script>
 <style>
+  /* Empêche les navigateurs (Chrome, Firefox, etc.) d'appliquer leur
+     propre "mode sombre forcé" au contenu de la page quand l'OS ou le
+     navigateur est en thème sombre. Sans cette déclaration, chaque
+     navigateur décide À SA FAÇON quelles couleurs inverser (texte,
+     fonds...), ce qui peut rendre du texte illisible (ex. texte par
+     défaut passé en blanc sur un fond resté blanc) et explique que le
+     rendu diffère d'un navigateur à l'autre (Edge vs Chrome/Firefox).
+     Cette page a son propre thème clair volontaire : on le déclare
+     explicitement pour que TOUS les navigateurs le respectent. */
+  html {
+    color-scheme: light only;
+  }
+
   :root {
     --header-bg: #2c3e50;
     --header-color: #ffffff;
     --week-bg: #34495e;
     --fixed-bg: #1a252f;
-    --border-color: #ddd;
+    --border-color: #000000;
     --cell-hover: #f5f7fa;
 
     --col1-width: 92px;
@@ -118,6 +132,7 @@
     white-space: pre-wrap;
     word-break: break-word;
     overflow-wrap: break-word;
+    color: #333333;
   }
 
   td.editable:hover {
@@ -132,6 +147,7 @@
 
   td.materiel-highlight {
     background: #d8b4fe !important;
+    color: #333333 !important;
   }
 
   td.date-cell {
@@ -430,6 +446,7 @@
 
   .sticky-corner td.corner-cell {
     background: #fff;
+    color: #333333;
     cursor: default;
     min-height: var(--cell-min-height);
     font-size: var(--cell-font-size);
@@ -441,6 +458,7 @@
 
   .sticky-corner td.corner-cell.materiel-highlight {
     background: #d8b4fe;
+    color: #333333;
   }
 
   /* ---- Colonnes "Employé" figées horizontalement dans le tableau
@@ -451,10 +469,12 @@
     position: sticky;
     z-index: 15;
     background: #fff;
+    color: #333333;
   }
 
   td.fixed-col.materiel-highlight {
     background: #d8b4fe;
+    color: #333333;
   }
 
   td.fixed-col-2 {
@@ -480,23 +500,27 @@
   /* ---- Case divisible (jour x employé) : une bande par partie ----
      La <td> reste une vraie cellule de tableau normale (display par
      défaut) pour ne jamais casser la mise en page du tableau. C'est le
-     conteneur interne .split-cell-inner qui est en flex colonne avec
-     height:100%, afin que ses bandes (.split-part) s'étirent pour
-     occuper toute la hauteur de la case, même si la ligne s'agrandit
-     à cause d'une autre case du même jour (ex. un collègue avec 2
-     activités ce jour-là) — quel que soit leur nombre. */
+     conteneur interne .split-cell-inner qui est en flex colonne, pour
+     que ses bandes (.split-part) s'étirent pour occuper toute la
+     hauteur de la case, même si la ligne s'agrandit à cause d'une autre
+     case du même jour (ex. un collègue avec 2 activités ce jour-là).
+
+     NOTE CROSS-NAVIGATEUR : on n'utilise PLUS le hack "height:1px" sur
+     la <td> + "height:100%" sur .split-cell-inner. Cette astuce dépend
+     de la résolution des hauteurs en pourcentage à l'intérieur d'une
+     cellule de tableau, ce que Chrome/Edge et Firefox ne calculent pas
+     toujours de la même façon une fois la ligne agrandie par une AUTRE
+     case — d'où le texte qui dépasse et les bandes de couleur qui ne
+     remplissent pas toute la case sous Firefox. À la place, la hauteur
+     exacte à appliquer à chaque case de la ligne est mesurée et posée
+     explicitement en pixels par JavaScript (voir
+     equalizeSplitCellRowHeights), ce qui donne un rendu identique quel
+     que soit le navigateur. */
   td.split-cell {
     cursor: pointer;
     min-height: var(--cell-min-height);
     font-size: var(--cell-font-size);
     padding: 0;
-    /* "height: 1px" + un enfant en height:100% est l'astuce standard pour
-       forcer une cellule de tableau à transmettre sa VRAIE hauteur (celle
-       de la ligne, potentiellement agrandie par une autre case du même
-       jour) à son contenu interne flex, de façon fiable dans tous les
-       navigateurs. Avec vertical-align:top, le contenu remplit alors
-       toute la case en partant du haut, au lieu de flotter au milieu. */
-    height: 1px;
     vertical-align: top;
   }
 
@@ -509,7 +533,6 @@
   .split-cell-inner {
     display: flex;
     flex-direction: column;
-    height: 100%;
     min-height: var(--cell-min-height);
   }
 
@@ -869,11 +892,10 @@
     }
 
     /* Toutes les colonnes doivent apparaître dans l'export, même si
-       l'utilisateur avait masqué une semaine dans l'affichage. */
-    #app col[class*="wk-"],
-    #appHeader col[class*="wk-"] {
-      visibility: visible !important;
-    }
+       l'utilisateur avait masqué une semaine dans l'affichage. C'est
+       déjà garanti par exportPlanningPDF() qui vide "hiddenWeeks" et
+       rappelle applyWeekVisibility() (qui remet largeur de colonne et
+       affichage des cases à leur état normal) avant window.print(). */
   }
 
   /* ------------------------------------------------------------
@@ -988,6 +1010,7 @@
     white-space: pre-wrap !important;
     overflow: visible !important;
     text-align: left !important;
+    color: #333333 !important;
   }
 
   body.pdf-merge-mode #printApp td.date-cell {
@@ -2334,7 +2357,7 @@ const FIXED_MERGED_LABEL = "Employé";
 // Un seul code sert donc pour tous les mois.
 
 const CHOICE_COLORS = {
-  "Absences":    { bg: "#e74c3c", text: "#ffffff" },
+  "Absences":    { bg: "#e74c3c", text: "#333333" },
   "Chantiers":   { bg: "#87ceeb", text: "#003049" },
   "Rapport":     { bg: "#2ecc71", text: "#053a1e" },
   "Réunion":     { bg: "#4a4a4a", text: "#ffffff" },
@@ -2618,11 +2641,47 @@ function toggleWeek(weekNum) {
   updateWeekButtonStyles();
 }
 
+// Masque/affiche une semaine entière (toutes ses colonnes "jour").
+//
+// NOTE CROSS-NAVIGATEUR : la version précédente posait
+// "visibility: collapse" sur les <col> de la semaine. Ce mécanisme
+// n'est PAS interopérable : Safari le traite comme un simple "hidden"
+// (la colonne garde sa place, rien ne se masque visuellement), et les
+// moteurs Chromium récents (Chrome, Edge) ont même retiré la prise en
+// charge du repliement de colonne pour les tableaux. Seul Firefox le
+// gérait correctement — d'où le fait que ça pouvait sembler "marcher"
+// sur un navigateur et pas sur un autre selon lequel était testé.
+//
+// À la place, on combine deux mécanismes 100% standards et identiques
+// dans tous les navigateurs, sans exception :
+//  1) la largeur du <col> est mise à 0 — c'est elle qui pilote
+//     réellement l'espace réservé à la colonne dans un tableau à
+//     "table-layout: fixed", et changer une largeur est une opération
+//     de base, sans aucune ambiguïté d'implémentation ;
+//  2) chaque case (td) de cette semaine perd son padding/bordure et
+//     masque son contenu qui dépasserait (overflow:hidden), pour être
+//     sûr qu'aucun texte ne puisse déborder même si la largeur à 0
+//     n'était pas parfaitement respectée par un navigateur donné.
+//     ATTENTION : on n'utilise volontairement PAS "display:none" sur
+//     ces <td> — dans un tableau HTML, une cellule en display:none ne
+//     réserve plus sa place dans la grille de colonnes, ce qui
+//     décalerait TOUTES les cases suivantes de la ligne d'une colonne
+//     vers la gauche (elles se retrouveraient alignées sur le mauvais
+//     jour). Les cases restent donc de vraies cellules du tableau,
+//     juste réduites à une largeur nulle et sans contenu visible.
 function applyWeekVisibility(groups) {
   groups.forEach((g) => {
-    const cols = document.querySelectorAll(`col.wk-${g.weekIndex}`);
     const shouldHide = hiddenWeeks.has(g.weekNum);
-    cols.forEach((c) => { c.style.visibility = shouldHide ? "collapse" : ""; });
+
+    document.querySelectorAll(`col.wk-${g.weekIndex}`).forEach((col) => {
+      col.style.width = shouldHide ? "0px" : "";
+    });
+
+    document.querySelectorAll(`td.wk-${g.weekIndex}`).forEach((cell) => {
+      cell.style.padding = shouldHide ? "0" : "";
+      cell.style.overflow = shouldHide ? "hidden" : "";
+      cell.style.borderWidth = shouldHide ? "0" : "";
+    });
   });
 }
 
@@ -3007,7 +3066,7 @@ function render(records, mappings) {
           // Ligne des dates : simple texte éditable (JJ/MM ou JJ/MM/AAAA).
           const dateItems = extractChoiceItems(rawValue);
           const dateText = dateItems.length ? dateItems.join(", ") : String(rawValue ?? "");
-          rowHtml += `<td class="editable date-cell" data-row-id="${record.id}" data-col="${key}" data-cell-type="date">${escapeHtml(dateText)}</td>`;
+          rowHtml += `<td class="editable date-cell wk-${group.weekIndex}" data-row-id="${record.id}" data-col="${key}" data-cell-type="date">${escapeHtml(dateText)}</td>`;
           return;
         }
 
@@ -3088,6 +3147,51 @@ function render(records, mappings) {
   applyWeekVisibility(weekKeyGroups);
   updateStickyOffsets();
   syncStickyHeaderScroll();
+  scheduleEqualizeSplitCellRowHeights();
+}
+
+// ============================================================
+// CROSS-NAVIGATEUR : hauteur des cases divisibles (jour x employé)
+// ============================================================
+// Pour chaque ligne (employé), mesure la hauteur naturelle la plus
+// grande parmi ses cases "jour" (.split-cell-inner) — c'est-à-dire
+// celle de la case qui a le plus d'activités empilées — puis applique
+// EXPLICITEMENT cette même hauteur, en pixels, à toutes les cases de
+// la ligne. Ainsi chaque bande de couleur (.split-part) remplit
+// toujours toute la case, et le texte ne peut jamais dépasser, sans
+// dépendre d'un calcul de hauteur en pourcentage dans une cellule de
+// tableau (source des différences observées entre Chrome/Edge et
+// Firefox).
+function equalizeSplitCellRowHeights() {
+  const table = document.querySelector("#app table");
+  if (!table) return;
+
+  const rows = table.querySelectorAll("tbody > tr");
+  rows.forEach((row) => {
+    const inners = row.querySelectorAll(":scope > td.split-cell > .split-cell-inner");
+    if (!inners.length) return;
+
+    // 1) Revient à la hauteur naturelle de chaque case avant de mesurer
+    //    (sinon on mesurerait une hauteur déjà forcée par un rendu précédent).
+    inners.forEach((inner) => { inner.style.minHeight = ""; });
+
+    // 2) Hauteur réellement nécessaire : la plus grande des cases de la ligne.
+    let maxHeight = 0;
+    inners.forEach((inner) => {
+      maxHeight = Math.max(maxHeight, inner.getBoundingClientRect().height);
+    });
+
+    // 3) Applique cette hauteur à TOUTES les cases de la ligne, en dur.
+    inners.forEach((inner) => {
+      inner.style.minHeight = maxHeight.toFixed(1) + "px";
+    });
+  });
+}
+
+let _rowHeightRaf = null;
+function scheduleEqualizeSplitCellRowHeights() {
+  if (_rowHeightRaf) cancelAnimationFrame(_rowHeightRaf);
+  _rowHeightRaf = requestAnimationFrame(equalizeSplitCellRowHeights);
 }
 
 // Mesure les hauteurs réelles de la barre d'outils et des boutons de
@@ -3122,6 +3226,7 @@ let _stickyResizeRaf = null;
 window.addEventListener("resize", () => {
   if (_stickyResizeRaf) cancelAnimationFrame(_stickyResizeRaf);
   _stickyResizeRaf = requestAnimationFrame(updateStickyOffsets);
+  scheduleEqualizeSplitCellRowHeights();
 });
 
 // ============================================================
@@ -3567,12 +3672,6 @@ function exportPlanningPDF() {
   if (currentWeekGroups && currentWeekGroups.length) {
     applyWeekVisibility(currentWeekGroups);
   }
-
-  // Force explicitement les colonnes de semaines à être visibles pendant
-  // l'impression, même si un navigateur interprète différemment visibility:collapse.
-  document.querySelectorAll('#app col[class*="wk-"], #appHeader col[class*="wk-"]').forEach((col) => {
-    col.style.visibility = "visible";
-  });
 
   // Construit le tableau fusionné (bandeau image + date/"Travail/matériels"
   // fusionnées en une seule colonne colorée) et l'affiche à la place du
