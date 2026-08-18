@@ -490,12 +490,14 @@
     min-height: var(--cell-min-height);
     font-size: var(--cell-font-size);
     padding: 0;
-    /* Surcharge le "vertical-align: top" de la règle générale des <td> :
-       avec un contenu interne en flex + height:100%, "top" empêche ce
-       contenu de s'étirer sur toute la hauteur de la case dans certains
-       navigateurs (le contenu reste alors calé en haut, sans remplir
-       l'espace en plus). */
-    vertical-align: middle;
+    /* "height: 1px" + un enfant en height:100% est l'astuce standard pour
+       forcer une cellule de tableau à transmettre sa VRAIE hauteur (celle
+       de la ligne, potentiellement agrandie par une autre case du même
+       jour) à son contenu interne flex, de façon fiable dans tous les
+       navigateurs. Avec vertical-align:top, le contenu remplit alors
+       toute la case en partant du haut, au lieu de flotter au milieu. */
+    height: 1px;
+    vertical-align: top;
   }
 
   td.split-cell:hover,
@@ -823,13 +825,15 @@
       min-height: 0 !important;
     }
 
-    /* Comme à l'écran/PDF : surcharge le "vertical-align:top" ci-dessus
-       pour cette case précise, sinon le contenu interne en flex
-       (.split-cell-inner) ne peut pas s'étirer sur toute la hauteur de
-       la case si la ligne s'agrandit à cause d'une autre case. */
+    /* Comme à l'écran : "height:1px" force la case à transmettre sa
+       vraie hauteur (celle de la ligne, agrandie ou non par une autre
+       case) à son contenu interne flex (.split-cell-inner), qui remplit
+       alors toute la case en partant du haut (vertical-align:top),
+       au lieu de flotter au milieu. */
     #app td.split-cell,
     #appHeader td.split-cell {
-      vertical-align: middle !important;
+      height: 1px !important;
+      vertical-align: top !important;
     }
 
     #app .chip,
@@ -1002,12 +1006,13 @@
     background: #ffffff !important;
     color: #333 !important;
     padding: 0 !important;
-    /* Pas de vertical-align:top ici (contrairement à avant) : avec un
-       contenu interne en flex + height:100%, "vertical-align:top"
-       empêche ce contenu de s'étirer sur toute la hauteur de la case
-       dans certains navigateurs. La règle générale des <td> plus haut
-       met déjà vertical-align:middle, ce qui est neutre ici puisque le
-       conteneur interne remplit de toute façon 100% de la case. */
+    /* "height:1px" force la case à transmettre sa vraie hauteur (celle
+       de la ligne, agrandie ou non par une autre case du même jour) à
+       son contenu interne flex (.split-cell-inner), qui remplit alors
+       toute la case en partant du haut-gauche, au lieu de flotter au
+       milieu quand une case voisine a plus d'activités. */
+    height: 1px !important;
+    vertical-align: top !important;
   }
 
   /* Comme à l'écran : le conteneur interne (.split-cell-inner) est en
@@ -3435,17 +3440,18 @@ function adjustPrintBannerHeight(printAppEl) {
   const tableEl = printAppEl.querySelector("table");
   if (!imgEl || !tableEl) return;
 
-  // Repart de la hauteur naturelle de l'image (pleine largeur de page,
-  // ratio d'origine), en retirant d'abord toute hauteur explicite laissée
-  // par un export précédent.
+  // Retire d'abord toute hauteur explicite laissée par un export précédent.
   imgEl.style.removeProperty("height");
-  const naturalHeightPx = imgEl.getBoundingClientRect().height;
 
-  // Taille de base = la MOITIÉ de la hauteur naturelle. C'est une taille
-  // FIXE : elle ne grandit jamais pour "remplir" l'espace laissé libre
-  // par un tableau court. Elle ne peut être que réduite (jamais agrandie)
-  // si le tableau a besoin de plus de place pour tenir sur une page.
-  const baseHeightPx = naturalHeightPx / 2;
+  // Taille de base = 1/5 de la hauteur utile de la feuille (page A4
+  // paysage : 210mm de large une fois les marges retirées, c'est-à-dire
+  // PRINT_PAGE_HEIGHT_PX). L'image garde par ailleurs toute la longueur
+  // de la page (largeur: 100%, voir CSS "img.print-banner"). C'est une
+  // taille FIXE : elle ne grandit jamais pour "remplir" l'espace laissé
+  // libre par un tableau court. Elle ne peut être que réduite (jamais
+  // agrandie) si le tableau a besoin de plus de place pour tenir sur
+  // une page.
+  const baseHeightPx = PRINT_PAGE_HEIGHT_PX / 5;
 
   const tableHeightPx = tableEl.getBoundingClientRect().height;
   const availableForImage = PRINT_PAGE_HEIGHT_PX - tableHeightPx - PRINT_PAGE_SAFETY_MARGIN_PX;
@@ -3477,11 +3483,55 @@ function openHelpModal() {
     const source = document.getElementById("helpGuideSource");
     const frame = document.getElementById("helpGuideFrame");
     if (source && frame) {
+      // Attache le correctif de défilement du sommaire une fois l'iframe
+      // effectivement chargée (événement "load"), plutôt que via un
+      // <script> placé DANS le srcdoc lui-même : un document chargé par
+      // "srcdoc" navigue en réalité deux fois en interne
+      // (about:blank puis about:srcdoc), ce qui peut faire perdre un
+      // écouteur posé pendant le tout premier passage. Se brancher sur
+      // "load" depuis la page externe est fiable dans tous les cas.
+      frame.addEventListener("load", attachHelpGuideAnchorFix, { once: true });
       frame.srcdoc = source.textContent;
       helpGuideLoaded = true;
     }
   }
   document.getElementById("helpModalOverlay").classList.add("open");
+}
+
+// Le guide utilise des liens d'ancre (sommaire, "retour en haut", liens
+// entre sections) de la forme <a href="#section">. Dans un document
+// chargé via "srcdoc" (sans URL réelle), le navigateur change bien le
+// hash au clic mais ne déclenche pas toujours le défilement automatique
+// associé : on le fait donc nous-mêmes, une fois pour toutes, après le
+// chargement complet de l'iframe.
+function attachHelpGuideAnchorFix() {
+  const frame = document.getElementById("helpGuideFrame");
+  const doc = frame && frame.contentDocument;
+  if (!doc) return;
+  doc.addEventListener("click", (e) => {
+    const link = e.target.closest('a[href^="#"]');
+    if (!link) return;
+    const id = link.getAttribute("href").slice(1);
+    if (!id) return;
+    const target = doc.getElementById(id);
+    if (!target) return;
+    e.preventDefault();
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
+    // Mettre à jour le hash affiché est un simple confort (copier le lien,
+    // bouton précédent/suivant) ; un document "srcdoc" n'a pas d'URL
+    // réelle et peut refuser cet appel selon le navigateur, donc on
+    // l'entoure d'un try/catch pour ne jamais bloquer le défilement,
+    // qui est l'essentiel, à cause de ça.
+    try {
+      if (doc.defaultView && doc.defaultView.history) {
+        doc.defaultView.history.replaceState(null, "", "#" + id);
+      }
+    } catch (err) {
+      /* Ignoré : l'URL de secours "about:srcdoc" refuse parfois
+         history.replaceState avec un fragment ; le défilement a déjà
+         eu lieu, donc ce n'est pas gênant. */
+    }
+  });
 }
 
 function closeHelpModal() {
