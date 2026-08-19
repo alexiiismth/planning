@@ -585,6 +585,21 @@
     z-index: 15;
     background: #fff;
     color: #333333;
+    /* CROSS-NAVIGATEUR : "border-collapse: collapse" combiné à
+       "position: sticky" est un cas connu où la bordure PARTAGÉE d'une
+       case figée peut disparaître par intermittence pendant le
+       défilement horizontal (bug de rendu lié à la façon dont le
+       navigateur recompose la case figée séparément du reste du
+       tableau qui défile — indépendant du navigateur utilisé). Une
+       "box-shadow" en revanche est peinte directement DANS la case
+       elle-même (même couche que sa position sticky) : elle reste donc
+       toujours visible pendant le défilement, contrairement à une
+       bordure classique posée sur la case ou sa voisine. */
+    box-shadow:
+      inset 0 1px 0 0 var(--border-color),
+      inset 0 -1px 0 0 var(--border-color),
+      inset 1px 0 0 0 var(--border-color),
+      inset -1px 0 0 0 var(--border-color);
   }
 
   td.fixed-col.materiel-highlight {
@@ -593,7 +608,17 @@
   }
 
   td.fixed-col-2 {
-    box-shadow: 2px 0 4px -2px rgba(0,0,0,0.25);
+    /* Combine, dans UNE seule déclaration box-shadow (une case n'a
+       qu'une seule propriété box-shadow ; la reposer ailleurs
+       écraserait la première) : le même contour noir fiable que
+       ci-dessus, PLUS l'ombre portée qui indique visuellement que du
+       contenu défile sous cette colonne. */
+    box-shadow:
+      inset 0 1px 0 0 var(--border-color),
+      inset 0 -1px 0 0 var(--border-color),
+      inset 1px 0 0 0 var(--border-color),
+      inset -1px 0 0 0 var(--border-color),
+      2px 0 4px -2px rgba(0,0,0,0.25);
   }
 
   .week-btn {
@@ -992,14 +1017,8 @@
       min-height: 0 !important;
     }
 
-    /* Comme à l'écran : "height:1px" force la case à transmettre sa
-       vraie hauteur (celle de la ligne, agrandie ou non par une autre
-       case) à son contenu interne flex (.split-cell-inner), qui remplit
-       alors toute la case en partant du haut (vertical-align:top),
-       au lieu de flotter au milieu. */
     #app td.split-cell,
     #appHeader td.split-cell {
-      height: 1px !important;
       vertical-align: top !important;
     }
 
@@ -1173,24 +1192,22 @@
     background: #ffffff !important;
     color: #333 !important;
     padding: 0 !important;
-    /* "height:1px" force la case à transmettre sa vraie hauteur (celle
-       de la ligne, agrandie ou non par une autre case du même jour) à
-       son contenu interne flex (.split-cell-inner), qui remplit alors
-       toute la case en partant du haut-gauche, au lieu de flotter au
-       milieu quand une case voisine a plus d'activités. */
-    height: 1px !important;
     vertical-align: top !important;
   }
 
-  /* Comme à l'écran : le conteneur interne (.split-cell-inner) est en
-     flex colonne avec height:100%, pour que les bandes s'étirent et
-     occupent toute la hauteur de la case, même si la ligne s'agrandit
-     à cause d'une autre case (jour) du même employé ayant plus
-     d'activités. La <td> reste une cellule de tableau normale. */
+  /* CROSS-NAVIGATEUR : comme pour le tableau à l'écran (voir
+     equalizeSplitCellRowHeights), on n'utilise PLUS le hack CSS
+     "height:1px" + flex "height:100%" pour étirer les bandes de
+     couleur jusqu'en bas de la case. Ce hack n'est pas fiable sous
+     Firefox une fois la ligne agrandie par une autre case du même
+     jour : c'est précisément ce qui rendait le PDF "écrasé" (texte et
+     couleurs à peine visibles) sous Firefox. La hauteur exacte de
+     chaque ligne est maintenant mesurée puis posée explicitement en
+     pixels par JavaScript, juste avant l'impression (voir
+     equalizePrintCellRowHeights, appelée depuis exportPlanningPDF). */
   body.pdf-merge-mode #printApp td.print-choice-cell .split-cell-inner {
     display: flex !important;
     flex-direction: column !important;
-    height: 100% !important;
     min-height: 0 !important;
   }
 
@@ -2527,6 +2544,20 @@ const CHOICE_COLORS = {
 const MATERIEL_KEYWORD = "Matériels";
 const FREEZE_FIRST_ROW_AS_DATE = true;
 
+// Identité affichée/utilisée pour un employé = "Nom Prénom" (les deux
+// colonnes fixes sous l'en-tête "Employé"), TOUJOURS calculée de la
+// même façon (même trim, même jointure) partout où c'est nécessaire —
+// génération de la ligne <tr> ET génération du filtre — pour être sûr
+// que les deux valeurs correspondent exactement à l'octet près. Un
+// simple .trim() manquant d'un seul côté suffirait à faire échouer le
+// filtre pour un employé (la case cochée dans le filtre ne
+// correspondrait alors plus jamais à l'attribut posé sur sa ligne).
+function getEmployeeIdentity(record, fixedKeys) {
+  const first = String(record[fixedKeys[0]] ?? "").trim();
+  const second = fixedKeys[1] ? String(record[fixedKeys[1]] ?? "").trim() : "";
+  return [first, second].filter(Boolean).join(" ");
+}
+
 // ============================================================
 // ÉTAT PERSISTANT
 // ============================================================
@@ -3219,8 +3250,9 @@ function render(records, mappings) {
   // dans le tableau principal) ----
   function buildRowHtml(record, isDateRow) {
     // data-employee sert au filtre "Filtrer par employé(s)" : identité
-    // de la ligne = valeur de la 1re colonne fixe (ex. "Nom").
-    const employeeName = String(record[fixedKeys[0]] ?? "");
+    // de la ligne = "Nom Prénom" (voir getEmployeeIdentity, calculée de
+    // façon strictement identique ici et dans buildEmployeeFilterPanel).
+    const employeeName = getEmployeeIdentity(record, fixedKeys);
     let rowHtml = `<tr data-employee="${escapeHtml(employeeName)}">`;
 
     fixedKeys.forEach((key, i) => {
@@ -3321,7 +3353,7 @@ function render(records, mappings) {
   attachEditHandlers();
   attachSplitCellHandlers();
   applyWeekVisibility(weekKeyGroups);
-  buildEmployeeFilterPanel(bodyRecords, fixedKeys[0]);
+  buildEmployeeFilterPanel(bodyRecords, fixedKeys);
   buildActivityFilterPanel();
   applyEmployeeFilter();
   applyActivityFilter();
@@ -3355,16 +3387,20 @@ document.addEventListener("click", (e) => {
   });
 });
 
-function buildEmployeeFilterPanel(bodyRecords, firstFixedKey) {
+function buildEmployeeFilterPanel(bodyRecords, fixedKeys) {
   const panel = document.getElementById("employeeFilterPanel");
   const btn = document.getElementById("employeeFilterBtn");
   if (!panel) return;
 
-  // Liste des employés dans l'ordre du tableau, sans doublons.
+  // Liste des employés ("Nom Prénom") dans l'ordre du tableau, sans
+  // doublons — calculée avec EXACTEMENT la même fonction que celle
+  // utilisée pour poser l'attribut data-employee sur chaque <tr>
+  // (getEmployeeIdentity), pour garantir que les deux valeurs
+  // correspondent toujours parfaitement.
   const names = [];
   const seen = new Set();
   bodyRecords.forEach((record) => {
-    const name = String(record[firstFixedKey] ?? "").trim();
+    const name = getEmployeeIdentity(record, fixedKeys);
     if (name && !seen.has(name)) {
       seen.add(name);
       names.push(name);
@@ -3387,7 +3423,7 @@ function buildEmployeeFilterPanel(bodyRecords, firstFixedKey) {
   allBtn.textContent = "Tout cocher";
   allBtn.addEventListener("click", () => {
     names.forEach((n) => selectedEmployeeFilter.add(n));
-    buildEmployeeFilterPanel(bodyRecords, firstFixedKey);
+    buildEmployeeFilterPanel(bodyRecords, fixedKeys);
     applyEmployeeFilter();
   });
   const noneBtn = document.createElement("button");
@@ -3395,7 +3431,7 @@ function buildEmployeeFilterPanel(bodyRecords, firstFixedKey) {
   noneBtn.textContent = "Tout décocher";
   noneBtn.addEventListener("click", () => {
     selectedEmployeeFilter.clear();
-    buildEmployeeFilterPanel(bodyRecords, firstFixedKey);
+    buildEmployeeFilterPanel(bodyRecords, fixedKeys);
     applyEmployeeFilter();
   });
   actions.appendChild(allBtn);
@@ -3937,6 +3973,41 @@ const PRINT_PAGE_SAFETY_MARGIN_PX = 3;
 // - si le tableau est trop grand, la hauteur de l'image est réduite (sans
 //   jamais descendre sous PRINT_BANNER_MIN_HEIGHT_PX) pour laisser de la
 //   place au planning.
+// ============================================================
+// CROSS-NAVIGATEUR (PDF) : hauteur des cases divisibles fusionnées
+// ============================================================
+// Même bug que celui déjà corrigé pour le tableau à l'écran (voir
+// equalizeSplitCellRowHeights) : sans cette étape, une case avec
+// plusieurs activités empilées agrandit sa ligne, mais les autres
+// cases de la même ligne ne suivent pas de façon fiable sous Firefox —
+// d'où un PDF "écrasé", texte et couleurs à peine visibles. On mesure
+// donc ici la hauteur réelle nécessaire de chaque ligne du tableau
+// fusionné, et on l'applique explicitement en pixels à toutes les
+// cases de cette ligne. Appelée AVANT adjustPrintBannerHeight, pour
+// que la hauteur du tableau mesurée ensuite soit déjà correcte.
+function equalizePrintCellRowHeights(printAppEl) {
+  if (!printAppEl) return;
+  const table = printAppEl.querySelector("table");
+  if (!table) return;
+
+  const rows = table.querySelectorAll("tbody > tr");
+  rows.forEach((row) => {
+    const inners = row.querySelectorAll(":scope > td.print-choice-cell > .split-cell-inner");
+    if (!inners.length) return;
+
+    inners.forEach((inner) => { inner.style.minHeight = ""; });
+
+    let maxHeight = 0;
+    inners.forEach((inner) => {
+      maxHeight = Math.max(maxHeight, inner.getBoundingClientRect().height);
+    });
+
+    inners.forEach((inner) => {
+      inner.style.minHeight = maxHeight.toFixed(1) + "px";
+    });
+  });
+}
+
 function adjustPrintBannerHeight(printAppEl) {
   const imgEl = printAppEl.querySelector("img.print-banner");
   const tableEl = printAppEl.querySelector("table");
@@ -4103,6 +4174,7 @@ function exportPlanningPDF() {
 
   const proceedToPrint = () => {
     if (mergedActivated) {
+      equalizePrintCellRowHeights(printAppEl);
       adjustPrintBannerHeight(printAppEl);
     }
 
