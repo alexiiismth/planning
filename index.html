@@ -155,6 +155,9 @@
     color: #333;
     font-weight: 600;
     text-align: center;
+    /* Les dates doivent toujours tenir sur une seule ligne sous
+       l'en-tête de semaine, même si la colonne est un peu étroite. */
+    white-space: nowrap;
   }
 
   td.date-cell[contenteditable="true"] {
@@ -245,6 +248,118 @@
     display: flex;
     align-items: center;
     gap: 8px;
+  }
+
+  /* ============================================================
+     FILTRES (employé(s) / activité(s))
+     ============================================================ */
+  .filter-btn-wrap {
+    position: relative;
+    flex: 0 0 auto;
+  }
+
+  .filter-btn {
+    flex: 0 0 auto;
+    padding: 8px 12px;
+    border: 1px solid #d0d5db;
+    border-radius: 6px;
+    background: #fff;
+    color: #2c3e50;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .filter-btn:hover {
+    background: #f5f7fa;
+  }
+
+  .filter-btn.filter-active {
+    background: #2c3e50;
+    color: #fff;
+    border-color: #2c3e50;
+  }
+
+  .filter-panel {
+    display: none;
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    z-index: 60;
+    background: #fff;
+    border: 1px solid #d0d5db;
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+    padding: 10px;
+    min-width: 220px;
+    max-height: 340px;
+    overflow-y: auto;
+  }
+
+  .filter-panel.open {
+    display: block;
+  }
+
+  .filter-panel-actions {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #eee;
+  }
+
+  .filter-panel-actions button {
+    flex: 1 1 0;
+    padding: 5px 8px;
+    border: 1px solid #d0d5db;
+    border-radius: 5px;
+    background: #f5f7fa;
+    color: #2c3e50;
+    font-size: 11px;
+    cursor: pointer;
+  }
+
+  .filter-panel-actions button:hover {
+    background: #eef1f4;
+  }
+
+  .filter-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 4px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 13px;
+    color: #333;
+  }
+
+  .filter-option:hover {
+    background: #f5f7fa;
+  }
+
+  .filter-option input[type="checkbox"] {
+    cursor: pointer;
+  }
+
+  /* Puce de couleur affichée devant chaque activité dans le filtre —
+     et surlignage marqué de l'option quand elle est cochée, pour que
+     l'utilisateur voie tout de suite la couleur de l'activité qu'il
+     sélectionne. */
+  .filter-option .filter-swatch {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    border: 1px solid rgba(0,0,0,0.25);
+    flex: 0 0 auto;
+  }
+
+  .filter-option.filter-option-checked {
+    outline: 2px solid #2c3e50;
+    outline-offset: -1px;
+    font-weight: 600;
   }
 
   /* ============================================================
@@ -639,6 +754,35 @@
     border: 1px solid #ccc;
     font-size: 12.5px;
     box-sizing: border-box;
+  }
+
+  /* Grille de boutons colorés pour choisir l'activité d'une partie —
+     chaque bouton est surligné avec la couleur réelle de l'activité,
+     et un contour marqué indique celui actuellement sélectionné. */
+  .choice-color-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .choice-color-btn {
+    padding: 6px 10px;
+    border: 2px solid transparent;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    opacity: 0.65;
+  }
+
+  .choice-color-btn:hover {
+    opacity: 0.9;
+  }
+
+  .choice-color-btn-selected {
+    opacity: 1;
+    border-color: #2c3e50;
+    box-shadow: 0 0 0 2px rgba(44,62,80,0.25);
   }
 
   .split-editor-part textarea {
@@ -1086,6 +1230,18 @@
 <div class="toolbar">
   <div id="status">Chargement…</div>
   <div class="toolbar-actions">
+    <div class="filter-btn-wrap">
+      <button type="button" id="employeeFilterBtn" class="filter-btn" onclick="toggleFilterPanel('employee')">
+        👤 Filtrer par employé(s)
+      </button>
+      <div id="employeeFilterPanel" class="filter-panel"></div>
+    </div>
+    <div class="filter-btn-wrap">
+      <button type="button" id="activityFilterBtn" class="filter-btn" onclick="toggleFilterPanel('activity')">
+        🎨 Filtrer par activité(s)
+      </button>
+      <div id="activityFilterPanel" class="filter-panel"></div>
+    </div>
     <button type="button" id="infoBtn" class="info-btn" onclick="openHelpModal()" title="Guide d'utilisation" aria-label="Guide d'utilisation">
       ℹ️
     </button>
@@ -2376,6 +2532,12 @@ const FREEZE_FIRST_ROW_AS_DATE = true;
 // ============================================================
 
 const hiddenWeeks = new Set(); // contient des numéros de semaine ISO (stables d'un rendu à l'autre)
+
+// Filtres "Filtrer par employé(s)" / "Filtrer par activité(s)" — un Set
+// vide veut dire "aucun filtre actif" (tout s'affiche). Les deux filtres
+// sont complémentaires : ils s'appliquent tous les deux en même temps.
+const selectedEmployeeFilter = new Set();
+const selectedActivityFilter = new Set();
 let columnTypesCache = {};
 let lastKeysSignature = null;
 let columnTypesLoadError = false;
@@ -2669,12 +2831,23 @@ function toggleWeek(weekNum) {
 //     vers la gauche (elles se retrouveraient alignées sur le mauvais
 //     jour). Les cases restent donc de vraies cellules du tableau,
 //     juste réduites à une largeur nulle et sans contenu visible.
+//
+//     IMPORTANT : applyWeekVisibility() est appelée à CHAQUE rendu
+//     (pas seulement quand on clique sur un bouton semaine), pour
+//     toutes les semaines, y compris celles qui restent visibles. Il
+//     faut donc explicitement repositionner la largeur normale
+//     ("var(--day-width)") pour une semaine visible — et non la vider
+//     avec une chaîne vide — sans quoi la largeur inline d'origine
+//     (posée une seule fois au moment de la génération du tableau)
+//     serait effacée à chaque rendu, et TOUTES les colonnes de jours
+//     se retrouveraient sans largeur définie, provoquant un
+//     rétrécissement massif de toutes les cases.
 function applyWeekVisibility(groups) {
   groups.forEach((g) => {
     const shouldHide = hiddenWeeks.has(g.weekNum);
 
     document.querySelectorAll(`col.wk-${g.weekIndex}`).forEach((col) => {
-      col.style.width = shouldHide ? "0px" : "";
+      col.style.width = shouldHide ? "0px" : "var(--day-width)";
     });
 
     document.querySelectorAll(`td.wk-${g.weekIndex}`).forEach((cell) => {
@@ -3045,7 +3218,10 @@ function render(records, mappings) {
   // dans le mini-tableau figé, ET pour les lignes employé normales,
   // dans le tableau principal) ----
   function buildRowHtml(record, isDateRow) {
-    let rowHtml = "<tr>";
+    // data-employee sert au filtre "Filtrer par employé(s)" : identité
+    // de la ligne = valeur de la 1re colonne fixe (ex. "Nom").
+    const employeeName = String(record[fixedKeys[0]] ?? "");
+    let rowHtml = `<tr data-employee="${escapeHtml(employeeName)}">`;
 
     fixedKeys.forEach((key, i) => {
       const rawValue = record[key];
@@ -3145,8 +3321,204 @@ function render(records, mappings) {
   attachEditHandlers();
   attachSplitCellHandlers();
   applyWeekVisibility(weekKeyGroups);
+  buildEmployeeFilterPanel(bodyRecords, fixedKeys[0]);
+  buildActivityFilterPanel();
+  applyEmployeeFilter();
+  applyActivityFilter();
   updateStickyOffsets();
   syncStickyHeaderScroll();
+  scheduleEqualizeSplitCellRowHeights();
+}
+
+// ============================================================
+// FILTRES "Filtrer par employé(s)" / "Filtrer par activité(s)"
+// ============================================================
+
+function toggleFilterPanel(which) {
+  const panelId = which === "employee" ? "employeeFilterPanel" : "activityFilterPanel";
+  const otherPanelId = which === "employee" ? "activityFilterPanel" : "employeeFilterPanel";
+  const panel = document.getElementById(panelId);
+  const otherPanel = document.getElementById(otherPanelId);
+  if (!panel) return;
+  const isOpen = panel.classList.contains("open");
+  if (otherPanel) otherPanel.classList.remove("open");
+  panel.classList.toggle("open", !isOpen);
+}
+
+// Ferme les panneaux de filtre si on clique en dehors.
+document.addEventListener("click", (e) => {
+  document.querySelectorAll(".filter-btn-wrap").forEach((wrap) => {
+    if (!wrap.contains(e.target)) {
+      const panel = wrap.querySelector(".filter-panel");
+      if (panel) panel.classList.remove("open");
+    }
+  });
+});
+
+function buildEmployeeFilterPanel(bodyRecords, firstFixedKey) {
+  const panel = document.getElementById("employeeFilterPanel");
+  const btn = document.getElementById("employeeFilterBtn");
+  if (!panel) return;
+
+  // Liste des employés dans l'ordre du tableau, sans doublons.
+  const names = [];
+  const seen = new Set();
+  bodyRecords.forEach((record) => {
+    const name = String(record[firstFixedKey] ?? "").trim();
+    if (name && !seen.has(name)) {
+      seen.add(name);
+      names.push(name);
+    }
+  });
+
+  // Un employé précédemment sélectionné qui n'existe plus (ligne
+  // supprimée/renommée) est retiré du filtre pour éviter un filtre
+  // "actif" qui ne masque plus rien de façon incompréhensible.
+  Array.from(selectedEmployeeFilter).forEach((name) => {
+    if (!seen.has(name)) selectedEmployeeFilter.delete(name);
+  });
+
+  panel.innerHTML = "";
+
+  const actions = document.createElement("div");
+  actions.className = "filter-panel-actions";
+  const allBtn = document.createElement("button");
+  allBtn.type = "button";
+  allBtn.textContent = "Tout cocher";
+  allBtn.addEventListener("click", () => {
+    names.forEach((n) => selectedEmployeeFilter.add(n));
+    buildEmployeeFilterPanel(bodyRecords, firstFixedKey);
+    applyEmployeeFilter();
+  });
+  const noneBtn = document.createElement("button");
+  noneBtn.type = "button";
+  noneBtn.textContent = "Tout décocher";
+  noneBtn.addEventListener("click", () => {
+    selectedEmployeeFilter.clear();
+    buildEmployeeFilterPanel(bodyRecords, firstFixedKey);
+    applyEmployeeFilter();
+  });
+  actions.appendChild(allBtn);
+  actions.appendChild(noneBtn);
+  panel.appendChild(actions);
+
+  names.forEach((name) => {
+    const label = document.createElement("label");
+    label.className = "filter-option" + (selectedEmployeeFilter.has(name) ? " filter-option-checked" : "");
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = selectedEmployeeFilter.has(name);
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) selectedEmployeeFilter.add(name);
+      else selectedEmployeeFilter.delete(name);
+      label.classList.toggle("filter-option-checked", checkbox.checked);
+      applyEmployeeFilter();
+      updateFilterButtonStyles();
+    });
+    label.appendChild(checkbox);
+    const span = document.createElement("span");
+    span.textContent = name;
+    label.appendChild(span);
+    panel.appendChild(label);
+  });
+
+  updateFilterButtonStyles();
+}
+
+function buildActivityFilterPanel() {
+  const panel = document.getElementById("activityFilterPanel");
+  if (!panel) return;
+
+  panel.innerHTML = "";
+
+  const actions = document.createElement("div");
+  actions.className = "filter-panel-actions";
+  const allBtn = document.createElement("button");
+  allBtn.type = "button";
+  allBtn.textContent = "Tout cocher";
+  allBtn.addEventListener("click", () => {
+    Object.keys(CHOICE_COLORS).forEach((c) => selectedActivityFilter.add(c));
+    buildActivityFilterPanel();
+    applyActivityFilter();
+  });
+  const noneBtn = document.createElement("button");
+  noneBtn.type = "button";
+  noneBtn.textContent = "Tout décocher";
+  noneBtn.addEventListener("click", () => {
+    selectedActivityFilter.clear();
+    buildActivityFilterPanel();
+    applyActivityFilter();
+  });
+  actions.appendChild(allBtn);
+  actions.appendChild(noneBtn);
+  panel.appendChild(actions);
+
+  Object.keys(CHOICE_COLORS).forEach((choice) => {
+    const color = CHOICE_COLORS[choice];
+    const label = document.createElement("label");
+    label.className = "filter-option" + (selectedActivityFilter.has(choice) ? " filter-option-checked" : "");
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = selectedActivityFilter.has(choice);
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) selectedActivityFilter.add(choice);
+      else selectedActivityFilter.delete(choice);
+      label.classList.toggle("filter-option-checked", checkbox.checked);
+      applyActivityFilter();
+      updateFilterButtonStyles();
+    });
+    label.appendChild(checkbox);
+    const swatch = document.createElement("span");
+    swatch.className = "filter-swatch";
+    swatch.style.background = color.bg;
+    label.appendChild(swatch);
+    const span = document.createElement("span");
+    span.textContent = choice;
+    label.appendChild(span);
+    panel.appendChild(label);
+  });
+
+  updateFilterButtonStyles();
+}
+
+function updateFilterButtonStyles() {
+  const employeeBtn = document.getElementById("employeeFilterBtn");
+  const activityBtn = document.getElementById("activityFilterBtn");
+  if (employeeBtn) employeeBtn.classList.toggle("filter-active", selectedEmployeeFilter.size > 0);
+  if (activityBtn) activityBtn.classList.toggle("filter-active", selectedActivityFilter.size > 0);
+}
+
+// N'affiche que les lignes des employés cochés (Set vide = tout affiché).
+function applyEmployeeFilter() {
+  const table = document.querySelector("#app table");
+  if (!table) return;
+  const active = selectedEmployeeFilter.size > 0;
+  table.querySelectorAll("tbody > tr[data-employee]").forEach((row) => {
+    const name = row.getAttribute("data-employee") || "";
+    const show = !active || selectedEmployeeFilter.has(name);
+    row.style.display = show ? "" : "none";
+  });
+}
+
+// Ne laisse apparaître, dans chaque case, que les activités cochées :
+// les autres bandes passent en fond blanc et texte invisible (mais
+// gardent leur place, pour ne pas casser l'alignement des lignes).
+function applyActivityFilter() {
+  const active = selectedActivityFilter.size > 0;
+  document.querySelectorAll("#app td.split-cell .split-part, #appHeader td.split-cell .split-part").forEach((part) => {
+    const choice = part.getAttribute("data-choice") || "";
+    const isMatch = !active || selectedActivityFilter.has(choice);
+    if (isMatch) {
+      const original = part.getAttribute("data-original-style") || "";
+      part.setAttribute("style", original);
+      part.classList.remove("filtered-out-part");
+    } else {
+      part.setAttribute("style", "background:#ffffff;color:#ffffff;");
+      part.classList.add("filtered-out-part");
+    }
+  });
+  // La hauteur des lignes ne change pas (les bandes gardent leur
+  // place), mais on recalcule quand même par sécurité.
   scheduleEqualizeSplitCellRowHeights();
 }
 
@@ -3348,7 +3720,12 @@ function renderSplitCellContent(parts) {
       const style = color
         ? `background:${color.bg};color:${color.text};${color.border ? "border-bottom:" + color.border + ";" : ""}`
         : "background:transparent;color:#333;";
-      return `<div class="split-part" style="${style}">${escapeHtml(p.text || "")}</div>`;
+      // data-original-style garde une copie exacte de la couleur d'origine
+      // de la case, pour que le filtre "activité(s)" puisse la RESTAURER
+      // fidèlement quand on recoche l'activité (voir applyActivityFilter) —
+      // sans ça, la couleur d'origine serait perdue une fois écrasée par
+      // le blanc du filtrage.
+      return `<div class="split-part" data-choice="${escapeHtml(p.choice || "")}" data-original-style="${escapeHtml(style)}" style="${style}">${escapeHtml(p.text || "")}</div>`;
     })
     .join("");
   return `<div class="split-cell-inner">${inner}</div>`;
@@ -3433,22 +3810,42 @@ function renderSplitEditor() {
     choiceLabel.textContent = `Partie ${idx + 1} — activité`;
     partEl.appendChild(choiceLabel);
 
-    const select = document.createElement("select");
-    const noneOpt = document.createElement("option");
-    noneOpt.value = "";
-    noneOpt.textContent = "— Aucune —";
-    select.appendChild(noneOpt);
+    // Grille de boutons colorés (au lieu d'un <select> natif) : chaque
+    // activité est surlignée avec SA PROPRE couleur, y compris quand on
+    // la sélectionne, pour que le choix soit visuel et immédiat.
+    const choiceGrid = document.createElement("div");
+    choiceGrid.className = "choice-color-grid";
+
+    const noneBtn = document.createElement("button");
+    noneBtn.type = "button";
+    noneBtn.className = "choice-color-btn" + (part.choice === "" ? " choice-color-btn-selected" : "");
+    noneBtn.textContent = "— Aucune —";
+    noneBtn.style.background = "#f5f5f5";
+    noneBtn.style.color = "#666";
+    noneBtn.addEventListener("click", () => {
+      splitEditorParts[idx].choice = "";
+      renderSplitEditor();
+    });
+    choiceGrid.appendChild(noneBtn);
+
     Object.keys(CHOICE_COLORS).forEach((choice) => {
-      const opt = document.createElement("option");
-      opt.value = choice;
-      opt.textContent = choice;
-      if (part.choice === choice) opt.selected = true;
-      select.appendChild(opt);
+      const color = CHOICE_COLORS[choice];
+      const btn = document.createElement("button");
+      btn.type = "button";
+      const isSelected = part.choice === choice;
+      btn.className = "choice-color-btn" + (isSelected ? " choice-color-btn-selected" : "");
+      btn.textContent = choice;
+      btn.style.background = color.bg;
+      btn.style.color = color.text;
+      if (color.border) btn.style.borderBottom = color.border;
+      btn.addEventListener("click", () => {
+        splitEditorParts[idx].choice = choice;
+        renderSplitEditor();
+      });
+      choiceGrid.appendChild(btn);
     });
-    select.addEventListener("change", () => {
-      splitEditorParts[idx].choice = select.value;
-    });
-    partEl.appendChild(select);
+
+    partEl.appendChild(choiceGrid);
 
     const textLabel = document.createElement("label");
     textLabel.textContent = "Texte";
