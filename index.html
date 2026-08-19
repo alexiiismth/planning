@@ -443,6 +443,19 @@
     border: 0;
   }
 
+
+  /* Bordures explicites : Firefox peut conserver un état intermédiaire
+     après des modifications dynamiques de cellules/tableau. */
+  #app table {
+    border-collapse: collapse;
+  }
+
+  #app table th,
+  #app table td {
+    border: 1px solid #222;
+    box-sizing: border-box;
+  }
+
   @media print {
     .help-modal-overlay {
       display: none !important;
@@ -674,6 +687,11 @@
     display: flex;
     flex-direction: column;
     min-height: var(--cell-min-height);
+  
+    display: flex !important;
+    flex-direction: column !important;
+    height: 100%;
+    min-height: 0;
   }
 
   .split-part {
@@ -683,7 +701,7 @@
        long. flex-grow (1) ne fait alors qu'ajouter l'espace EN PLUS,
        pour occuper toute la hauteur disponible quand la ligne est plus
        haute à cause d'une autre case. */
-    flex: 1 1 auto;
+    flex: 1 1 0 !important;
     min-height: 18px;
     padding: 3px 5px;
     white-space: pre-wrap;
@@ -2865,9 +2883,18 @@ function applyWeekVisibility(groups) {
     });
 
     document.querySelectorAll(`td.wk-${g.weekIndex}`).forEach((cell) => {
-      cell.style.padding = shouldHide ? "0" : "";
-      cell.style.overflow = shouldHide ? "hidden" : "";
-      cell.style.borderWidth = shouldHide ? "0" : "";
+      if (shouldHide) {
+        cell.style.padding = "0";
+        cell.style.overflow = "hidden";
+        cell.style.borderWidth = "0";
+      } else {
+        cell.style.padding = "";
+        cell.style.overflow = "";
+        // Valeur explicite pour Firefox : évite que le retour d'un filtre
+        // ou d'une semaine masquée fasse disparaître certaines séparations.
+        cell.style.borderWidth = "1px";
+        cell.style.borderStyle = "solid";
+      }
     });
   });
 }
@@ -3558,201 +3585,39 @@ function equalizeSplitCellRowHeights() {
 
   const rows = table.querySelectorAll("tbody > tr");
   rows.forEach((row) => {
-    const inners = row.querySelectorAll(":scope > td.split-cell > .split-cell-inner");
-    if (!inners.length) return;
+    const cells = row.querySelectorAll(":scope > td.split-cell");
+    if (!cells.length) return;
 
-    // Toujours repartir d'une hauteur totalement libre. Après un filtre,
-    // une ancienne hauteur inline peut sinon rester en mémoire et empêcher
-    // les bandes de reprendre toute la hauteur de la cellule.
-    inners.forEach((inner) => {
+    // IMPORTANT : supprimer toutes les hauteurs calculées lors d'un filtre
+    // avant de mesurer. On ne conserve aucune ancienne valeur inline.
+    cells.forEach((cell) => {
+      const inner = cell.querySelector(".split-cell-inner");
+      if (!inner) return;
       inner.style.height = "";
       inner.style.minHeight = "";
+      inner.style.flex = "";
     });
 
-    // Mesure de la hauteur naturelle maximale de la ligne.
+    // Forcer un reflow après le reset afin que le navigateur recalcule
+    // réellement la hauteur naturelle de la ligne.
+    void row.offsetHeight;
+
     let maxHeight = 0;
-    inners.forEach((inner) => {
+    cells.forEach((cell) => {
+      const inner = cell.querySelector(".split-cell-inner");
+      if (!inner) return;
       maxHeight = Math.max(maxHeight, inner.getBoundingClientRect().height);
     });
 
-    // La hauteur est imposée explicitement au conteneur, et les .split-part
-    // se partagent ensuite exactement cette hauteur.
-    inners.forEach((inner) => {
-      inner.style.height = maxHeight.toFixed(1) + "px";
-      inner.style.minHeight = maxHeight.toFixed(1) + "px";
+    if (maxHeight <= 0) return;
+
+    cells.forEach((cell) => {
+      const inner = cell.querySelector(".split-cell-inner");
+      if (!inner) return;
+      inner.style.height = `${maxHeight}px`;
+      inner.style.minHeight = `${maxHeight}px`;
     });
   });
-}
-
-let _rowHeightRaf = null;
-function scheduleEqualizeSplitCellRowHeights() {
-  if (_rowHeightRaf) cancelAnimationFrame(_rowHeightRaf);
-  _rowHeightRaf = requestAnimationFrame(equalizeSplitCellRowHeights);
-}
-
-// Mesure les hauteurs réelles de la barre d'outils et des boutons de
-// semaine, et les pose en variable CSS pour placer le mini-tableau figé
-// (en-tête + ligne des dates) juste en dessous. Appelée après chaque
-// rendu et au redimensionnement de la fenêtre (le passage à la ligne des
-// boutons peut changer leur hauteur).
-function updateStickyOffsets() {
-  const toolbarEl = document.querySelector(".toolbar");
-  const weekButtonsEl = document.getElementById("weekButtons");
-
-  const toolbarH = toolbarEl ? toolbarEl.getBoundingClientRect().height : 0;
-  const weekButtonsH = weekButtonsEl ? weekButtonsEl.getBoundingClientRect().height : 0;
-
-  const rootStyle = document.documentElement.style;
-  rootStyle.setProperty("--sticky-toolbar-h", toolbarH.toFixed(1) + "px");
-  rootStyle.setProperty("--sticky-weekbtns-h", weekButtonsH.toFixed(1) + "px");
-}
-
-// Le mini-tableau figé (en-tête + ligne des dates) est EN DEHORS de la
-// zone qui défile horizontalement (.scroll-wrap), donc on synchronise
-// manuellement son décalage horizontal avec celui du tableau principal,
-// pour que les colonnes restent alignées quand on défile latéralement.
-function syncStickyHeaderScroll() {
-  const scrollWrapEl = document.getElementById("scrollWrap");
-  const headerScrollEl = document.getElementById("stickyHeaderInner");
-  if (!scrollWrapEl || !headerScrollEl) return;
-  headerScrollEl.style.transform = `translateX(${-scrollWrapEl.scrollLeft}px)`;
-}
-
-let _stickyResizeRaf = null;
-window.addEventListener("resize", () => {
-  if (_stickyResizeRaf) cancelAnimationFrame(_stickyResizeRaf);
-  _stickyResizeRaf = requestAnimationFrame(updateStickyOffsets);
-  scheduleEqualizeSplitCellRowHeights();
-});
-
-// ============================================================
-// CASES TEXTE / DATE (édition directe)
-// ============================================================
-
-function attachEditHandlers() {
-  document.querySelectorAll("td.editable").forEach((cell) => {
-    cell.addEventListener("click", function onClick() {
-      if (cell.getAttribute("contenteditable") === "true") return;
-      cell.setAttribute("contenteditable", "true");
-      cell.focus();
-      placeCaretAtEnd(cell);
-    });
-
-    cell.addEventListener("blur", async function onBlur() {
-      cell.removeAttribute("contenteditable");
-      const rowId = Number(cell.dataset.rowId);
-      const colId = cell.dataset.col;
-      const newValue = cell.textContent;
-      if (cell.dataset.cellType === "date") {
-        await saveDateCell(rowId, colId, newValue, cell);
-      } else {
-        await saveTextValue(rowId, colId, newValue);
-      }
-    });
-
-    cell.addEventListener("keydown", function onKeydown(e) {
-      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); cell.blur(); }
-      if (e.key === "Escape") cell.blur();
-    });
-  });
-}
-
-async function saveTextValue(rowId, colId, newText) {
-  try {
-    await grist.selectedTable.update({ id: rowId, fields: { [colId]: newText } });
-    cellOriginalValues[`${rowId}_${colId}`] = newText;
-  } catch (err) {
-    console.error("Erreur d'écriture Grist:", err);
-    document.getElementById("status").textContent = "Erreur lors de l'enregistrement.";
-  }
-}
-
-async function saveDateCell(rowId, colId, newText, cellEl) {
-  try {
-    const trimmed = newText.trim();
-    const valueToSend = trimmed.length > 0 ? ["L", trimmed] : ["L"];
-    await grist.selectedTable.update({ id: rowId, fields: { [colId]: valueToSend } });
-    cellOriginalValues[`${rowId}_${colId}`] = valueToSend;
-    if (cellEl) cellEl.textContent = trimmed;
-  } catch (err) {
-    console.error("Erreur d'écriture Grist (case date):", err);
-    document.getElementById("status").textContent = "Erreur lors de l'enregistrement.";
-  }
-}
-
-function placeCaretAtEnd(el) {
-  const range = document.createRange();
-  range.selectNodeContents(el);
-  range.collapse(false);
-  const sel = window.getSelection();
-  sel.removeAllRanges();
-  sel.addRange(range);
-}
-
-// ============================================================
-// CASES DIVISIBLES — chaque case "employé" d'un jour peut être découpée
-// en plusieurs parties, chacune avec UNE activité (couleur) + un texte
-// libre, saisis dans un encadré qui s'ouvre au clic sur la case.
-// ============================================================
-
-const MAX_SPLIT_PARTS = 6;
-let activeSplitCell = { rowId: null, colId: null };
-let splitEditorParts = []; // état de travail local (copie), tant que l'encadré est ouvert
-
-// Lit la valeur brute Grist d'une case et la transforme en liste de
-// parties { choice, text }. Stockage courant : chaîne JSON
-// {"parts":[{"choice":"Absences","text":"..."}, ...]}. Les anciennes
-// valeurs (ChoiceList Grist, ou simple texte) sont converties au vol pour
-// rester lisibles.
-function parseCellParts(rawValue) {
-  if (typeof rawValue === "string" && rawValue.trim().length > 0) {
-    try {
-      const parsed = JSON.parse(rawValue);
-      if (parsed && Array.isArray(parsed.parts) && parsed.parts.length > 0) {
-        return parsed.parts.map((p) => ({
-          choice: typeof p.choice === "string" ? p.choice : "",
-          text: typeof p.text === "string" ? p.text : "",
-        }));
-      }
-    } catch (e) {
-      return [{ choice: "", text: rawValue }];
-    }
-  }
-  if (isGristList(rawValue)) {
-    const items = extractChoiceItems(rawValue);
-    if (items.length === 0) return [{ choice: "", text: "" }];
-    return items.map((choice) => ({ choice, text: "" }));
-  }
-  return [{ choice: "", text: "" }];
-}
-
-function serializeCellParts(parts) {
-  return JSON.stringify({ parts });
-}
-
-// Génère le HTML affiché dans la case (une bande par partie, colorée
-// selon l'activité choisie, avec son texte). Les bandes sont enveloppées
-// dans un conteneur interne (.split-cell-inner) en flex colonne avec
-// height:100%, pour qu'elles se répartissent toute la hauteur de la
-// case même si la ligne s'agrandit (voir CSS .split-cell-inner /
-// .split-part). La <td> elle-même reste une cellule de tableau normale.
-function renderSplitCellContent(parts) {
-  if (!parts || parts.length === 0) return "";
-  const inner = parts
-    .map((p) => {
-      const color = p.choice ? CHOICE_COLORS[p.choice] : null;
-      const style = color
-        ? `background:${color.bg};color:${color.text};${color.border ? "border-bottom:" + color.border + ";" : ""}`
-        : "background:transparent;color:#333;";
-      // data-original-style garde une copie exacte de la couleur d'origine
-      // de la case, pour que le filtre "activité(s)" puisse la RESTAURER
-      // fidèlement quand on recoche l'activité (voir applyActivityFilter) —
-      // sans ça, la couleur d'origine serait perdue une fois écrasée par
-      // le blanc du filtrage.
-      return `<div class="split-part" data-choice="${escapeHtml(p.choice || "")}" data-original-style="${escapeHtml(style)}" style="${style}">${escapeHtml(p.text || "")}</div>`;
-    })
-    .join("");
-  return `<div class="split-cell-inner">${inner}</div>`;
 }
 
 function attachSplitCellHandlers() {
