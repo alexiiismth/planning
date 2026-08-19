@@ -443,19 +443,6 @@
     border: 0;
   }
 
-
-  /* Bordures explicites : Firefox peut conserver un état intermédiaire
-     après des modifications dynamiques de cellules/tableau. */
-  #app table {
-    border-collapse: collapse;
-  }
-
-  #app table th,
-  #app table td {
-    border: 1px solid #222;
-    box-sizing: border-box;
-  }
-
   @media print {
     .help-modal-overlay {
       display: none !important;
@@ -687,11 +674,6 @@
     display: flex;
     flex-direction: column;
     min-height: var(--cell-min-height);
-  
-    display: flex !important;
-    flex-direction: column !important;
-    height: 100%;
-    min-height: 0;
   }
 
   .split-part {
@@ -701,7 +683,7 @@
        long. flex-grow (1) ne fait alors qu'ajouter l'espace EN PLUS,
        pour occuper toute la hauteur disponible quand la ligne est plus
        haute à cause d'une autre case. */
-    flex: 1 1 0 !important;
+    flex: 1 1 auto;
     min-height: 18px;
     padding: 3px 5px;
     white-space: pre-wrap;
@@ -1097,8 +1079,10 @@
     display: none !important;
   }
 
-  /* Le mini-tableau figé est déjà repris dans le tableau fusionné
-     #printApp (colonne date fusionnée). */
+  /* Le mini-tableau figé (en-tête "Employé"/"Semaine X" + ligne des
+     dates) est déjà repris dans le tableau fusionné #printApp
+     (colonne date fusionnée). Il ne doit donc PAS s'afficher en plus
+     en plus au-dessus du tableau fusionné quand le mode fusion est actif. */
   body.pdf-merge-mode .sticky-header-wrap {
     display: none !important;
   }
@@ -1120,7 +1104,18 @@
     margin: 0 !important;
     padding: 0 !important;
     table-layout: fixed !important;
-    border-collapse: collapse !important;
+    /* CROSS-NAVIGATEUR (PDF) : "border-collapse: collapse" partage un
+       seul trait de 1px entre deux cases voisines. Sur certains moteurs
+       d'impression (notamment Chrome/Edge selon l'échelle et le zoom
+       appliqués à la mise en page A4), ce trait partagé, très fin, est
+       arrondi/anti-crénelé jusqu'à disparaître sur certaines lignes ou
+       colonnes du tableau — d'où des cases sans bordure noire sur le PDF
+       généré. On passe donc en "border-separate" et on dessine la
+       bordure de chaque case avec un box-shadow (voir th/td plus bas),
+       une technique insensible à ce partage de trait et donc fiable
+       quel que soit le navigateur. */
+    border-collapse: separate !important;
+    border-spacing: 0 !important;
     box-shadow: none !important;
 
     -webkit-print-color-adjust: exact !important;
@@ -1155,6 +1150,15 @@
     overflow: hidden !important;
     word-break: break-word !important;
     overflow-wrap: anywhere !important;
+
+    /* Bordure dessinée en box-shadow plutôt qu'en "border" classique
+       (voir la note sur border-collapse plus haut) : contrairement à un
+       "border", un box-shadow n'est jamais fusionné/arrondi avec celui
+       de la case voisine, donc il reste visible sur toutes les lignes
+       et colonnes, y compris sur les navigateurs où les traits fins
+       "border-collapse" disparaissaient par endroits. */
+    border: none !important;
+    box-shadow: inset 0 0 0 1px #000000 !important;
 
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
@@ -1193,7 +1197,7 @@
      bande empilée, avec sa propre couleur de fond et son propre texte —
      exactement comme à l'écran, en plus compact. */
   body.pdf-merge-mode #printApp td.print-choice-cell {
-    text-align: center !important;
+    text-align: left !important;
     background: #ffffff !important;
     color: #333 !important;
     padding: 0 !important;
@@ -1227,7 +1231,7 @@
     font-size: 5.5px !important;
     line-height: 1.05 !important;
     border-bottom: 0.5px solid rgba(0,0,0,0.18) !important;
-    text-align: center !important;
+    text-align: left !important;
     /* La couleur de texte n'est PAS forcée ici : chaque partie garde la
        couleur de texte choisie pour son activité (voir CHOICE_COLORS),
        posée en style inline par renderSplitCellContent, pour rester
@@ -2582,6 +2586,9 @@ let lastWeekGroupsSignature = null;
 let lastRecords = null;
 let lastMappings = null;
 
+// Image d'en-tête (bandeau Cerema Angers) insérée en haut du PDF export.
+// Encodée en base64 pour que le widget reste un fichier HTML unique et autonome.
+
 // ============================================================
 // CALCUL DYNAMIQUE DES SEMAINES (à partir des vraies dates)
 // ============================================================
@@ -2883,18 +2890,9 @@ function applyWeekVisibility(groups) {
     });
 
     document.querySelectorAll(`td.wk-${g.weekIndex}`).forEach((cell) => {
-      if (shouldHide) {
-        cell.style.padding = "0";
-        cell.style.overflow = "hidden";
-        cell.style.borderWidth = "0";
-      } else {
-        cell.style.padding = "";
-        cell.style.overflow = "";
-        // Valeur explicite pour Firefox : évite que le retour d'un filtre
-        // ou d'une semaine masquée fasse disparaître certaines séparations.
-        cell.style.borderWidth = "1px";
-        cell.style.borderStyle = "solid";
-      }
+      cell.style.padding = shouldHide ? "0" : "";
+      cell.style.overflow = shouldHide ? "hidden" : "";
+      cell.style.borderWidth = shouldHide ? "0" : "";
     });
   });
 }
@@ -3122,8 +3120,8 @@ function buildPrintTableHtml(records, mappings) {
   });
 
   const fixedColWidthsPx = computeFixedColWidthsPx(records, fixedKeys);
-  let html = ""; 
-  html += "<table><colgroup>";
+
+  let html = "<table><colgroup>";
   fixedKeys.forEach((key, i) => {
     html += `<col style="width:${fixedColWidthsPx[i].toFixed(1)}px !important;">`;
   });
@@ -3543,6 +3541,13 @@ function applyEmployeeFilter() {
     const show = !active || selectedEmployeeFilter.has(name);
     row.style.display = show ? "" : "none";
   });
+  // CROSS-FILTRE : une ligne masquée (display:none) n'a pas de hauteur
+  // mesurable ; si equalizeSplitCellRowHeights() l'avait mesurée pendant
+  // qu'elle était cachée, ses cases garderaient une hauteur figée à 0
+  // même une fois la ligne réaffichée. On recalcule donc systématiquement
+  // après un changement de filtre employé, pour que les lignes qui
+  // redeviennent visibles retrouvent leur taille normale.
+  scheduleEqualizeSplitCellRowHeights();
 }
 
 // Ne laisse apparaître, dans chaque case, que les activités cochées :
@@ -3585,39 +3590,202 @@ function equalizeSplitCellRowHeights() {
 
   const rows = table.querySelectorAll("tbody > tr");
   rows.forEach((row) => {
-    const cells = row.querySelectorAll(":scope > td.split-cell");
-    if (!cells.length) return;
+    // Une ligne masquée par le filtre employé (display:none) n'a pas de
+    // boîte de mise en page : la mesurer donnerait 0 et figerait cette
+    // hauteur nulle sur ses cases, même une fois la ligne réaffichée. On
+    // laisse donc ses hauteurs inchangées et on la recalculera quand elle
+    // redeviendra visible (voir applyEmployeeFilter).
+    if (row.style.display === "none") return;
 
-    // IMPORTANT : supprimer toutes les hauteurs calculées lors d'un filtre
-    // avant de mesurer. On ne conserve aucune ancienne valeur inline.
-    cells.forEach((cell) => {
-      const inner = cell.querySelector(".split-cell-inner");
-      if (!inner) return;
-      inner.style.height = "";
-      inner.style.minHeight = "";
-      inner.style.flex = "";
-    });
+    const inners = row.querySelectorAll(":scope > td.split-cell > .split-cell-inner");
+    if (!inners.length) return;
 
-    // Forcer un reflow après le reset afin que le navigateur recalcule
-    // réellement la hauteur naturelle de la ligne.
-    void row.offsetHeight;
+    // 1) Revient à la hauteur naturelle de chaque case avant de mesurer
+    //    (sinon on mesurerait une hauteur déjà forcée par un rendu précédent).
+    inners.forEach((inner) => { inner.style.minHeight = ""; });
 
+    // 2) Hauteur réellement nécessaire : la plus grande des cases de la ligne.
     let maxHeight = 0;
-    cells.forEach((cell) => {
-      const inner = cell.querySelector(".split-cell-inner");
-      if (!inner) return;
+    inners.forEach((inner) => {
       maxHeight = Math.max(maxHeight, inner.getBoundingClientRect().height);
     });
 
-    if (maxHeight <= 0) return;
-
-    cells.forEach((cell) => {
-      const inner = cell.querySelector(".split-cell-inner");
-      if (!inner) return;
-      inner.style.height = `${maxHeight}px`;
-      inner.style.minHeight = `${maxHeight}px`;
+    // 3) Applique cette hauteur à TOUTES les cases de la ligne, en dur.
+    inners.forEach((inner) => {
+      inner.style.minHeight = maxHeight.toFixed(1) + "px";
     });
   });
+}
+
+let _rowHeightRaf = null;
+function scheduleEqualizeSplitCellRowHeights() {
+  if (_rowHeightRaf) cancelAnimationFrame(_rowHeightRaf);
+  _rowHeightRaf = requestAnimationFrame(equalizeSplitCellRowHeights);
+}
+
+// Mesure les hauteurs réelles de la barre d'outils et des boutons de
+// semaine, et les pose en variable CSS pour placer le mini-tableau figé
+// (en-tête + ligne des dates) juste en dessous. Appelée après chaque
+// rendu et au redimensionnement de la fenêtre (le passage à la ligne des
+// boutons peut changer leur hauteur).
+function updateStickyOffsets() {
+  const toolbarEl = document.querySelector(".toolbar");
+  const weekButtonsEl = document.getElementById("weekButtons");
+
+  const toolbarH = toolbarEl ? toolbarEl.getBoundingClientRect().height : 0;
+  const weekButtonsH = weekButtonsEl ? weekButtonsEl.getBoundingClientRect().height : 0;
+
+  const rootStyle = document.documentElement.style;
+  rootStyle.setProperty("--sticky-toolbar-h", toolbarH.toFixed(1) + "px");
+  rootStyle.setProperty("--sticky-weekbtns-h", weekButtonsH.toFixed(1) + "px");
+}
+
+// Le mini-tableau figé (en-tête + ligne des dates) est EN DEHORS de la
+// zone qui défile horizontalement (.scroll-wrap), donc on synchronise
+// manuellement son décalage horizontal avec celui du tableau principal,
+// pour que les colonnes restent alignées quand on défile latéralement.
+function syncStickyHeaderScroll() {
+  const scrollWrapEl = document.getElementById("scrollWrap");
+  const headerScrollEl = document.getElementById("stickyHeaderInner");
+  if (!scrollWrapEl || !headerScrollEl) return;
+  headerScrollEl.style.transform = `translateX(${-scrollWrapEl.scrollLeft}px)`;
+}
+
+let _stickyResizeRaf = null;
+window.addEventListener("resize", () => {
+  if (_stickyResizeRaf) cancelAnimationFrame(_stickyResizeRaf);
+  _stickyResizeRaf = requestAnimationFrame(updateStickyOffsets);
+  scheduleEqualizeSplitCellRowHeights();
+});
+
+// ============================================================
+// CASES TEXTE / DATE (édition directe)
+// ============================================================
+
+function attachEditHandlers() {
+  document.querySelectorAll("td.editable").forEach((cell) => {
+    cell.addEventListener("click", function onClick() {
+      if (cell.getAttribute("contenteditable") === "true") return;
+      cell.setAttribute("contenteditable", "true");
+      cell.focus();
+      placeCaretAtEnd(cell);
+    });
+
+    cell.addEventListener("blur", async function onBlur() {
+      cell.removeAttribute("contenteditable");
+      const rowId = Number(cell.dataset.rowId);
+      const colId = cell.dataset.col;
+      const newValue = cell.textContent;
+      if (cell.dataset.cellType === "date") {
+        await saveDateCell(rowId, colId, newValue, cell);
+      } else {
+        await saveTextValue(rowId, colId, newValue);
+      }
+    });
+
+    cell.addEventListener("keydown", function onKeydown(e) {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); cell.blur(); }
+      if (e.key === "Escape") cell.blur();
+    });
+  });
+}
+
+async function saveTextValue(rowId, colId, newText) {
+  try {
+    await grist.selectedTable.update({ id: rowId, fields: { [colId]: newText } });
+    cellOriginalValues[`${rowId}_${colId}`] = newText;
+  } catch (err) {
+    console.error("Erreur d'écriture Grist:", err);
+    document.getElementById("status").textContent = "Erreur lors de l'enregistrement.";
+  }
+}
+
+async function saveDateCell(rowId, colId, newText, cellEl) {
+  try {
+    const trimmed = newText.trim();
+    const valueToSend = trimmed.length > 0 ? ["L", trimmed] : ["L"];
+    await grist.selectedTable.update({ id: rowId, fields: { [colId]: valueToSend } });
+    cellOriginalValues[`${rowId}_${colId}`] = valueToSend;
+    if (cellEl) cellEl.textContent = trimmed;
+  } catch (err) {
+    console.error("Erreur d'écriture Grist (case date):", err);
+    document.getElementById("status").textContent = "Erreur lors de l'enregistrement.";
+  }
+}
+
+function placeCaretAtEnd(el) {
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  range.collapse(false);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+// ============================================================
+// CASES DIVISIBLES — chaque case "employé" d'un jour peut être découpée
+// en plusieurs parties, chacune avec UNE activité (couleur) + un texte
+// libre, saisis dans un encadré qui s'ouvre au clic sur la case.
+// ============================================================
+
+const MAX_SPLIT_PARTS = 6;
+let activeSplitCell = { rowId: null, colId: null };
+let splitEditorParts = []; // état de travail local (copie), tant que l'encadré est ouvert
+
+// Lit la valeur brute Grist d'une case et la transforme en liste de
+// parties { choice, text }. Stockage courant : chaîne JSON
+// {"parts":[{"choice":"Absences","text":"..."}, ...]}. Les anciennes
+// valeurs (ChoiceList Grist, ou simple texte) sont converties au vol pour
+// rester lisibles.
+function parseCellParts(rawValue) {
+  if (typeof rawValue === "string" && rawValue.trim().length > 0) {
+    try {
+      const parsed = JSON.parse(rawValue);
+      if (parsed && Array.isArray(parsed.parts) && parsed.parts.length > 0) {
+        return parsed.parts.map((p) => ({
+          choice: typeof p.choice === "string" ? p.choice : "",
+          text: typeof p.text === "string" ? p.text : "",
+        }));
+      }
+    } catch (e) {
+      return [{ choice: "", text: rawValue }];
+    }
+  }
+  if (isGristList(rawValue)) {
+    const items = extractChoiceItems(rawValue);
+    if (items.length === 0) return [{ choice: "", text: "" }];
+    return items.map((choice) => ({ choice, text: "" }));
+  }
+  return [{ choice: "", text: "" }];
+}
+
+function serializeCellParts(parts) {
+  return JSON.stringify({ parts });
+}
+
+// Génère le HTML affiché dans la case (une bande par partie, colorée
+// selon l'activité choisie, avec son texte). Les bandes sont enveloppées
+// dans un conteneur interne (.split-cell-inner) en flex colonne avec
+// height:100%, pour qu'elles se répartissent toute la hauteur de la
+// case même si la ligne s'agrandit (voir CSS .split-cell-inner /
+// .split-part). La <td> elle-même reste une cellule de tableau normale.
+function renderSplitCellContent(parts) {
+  if (!parts || parts.length === 0) return "";
+  const inner = parts
+    .map((p) => {
+      const color = p.choice ? CHOICE_COLORS[p.choice] : null;
+      const style = color
+        ? `background:${color.bg};color:${color.text};${color.border ? "border-bottom:" + color.border + ";" : ""}`
+        : "background:transparent;color:#333;";
+      // data-original-style garde une copie exacte de la couleur d'origine
+      // de la case, pour que le filtre "activité(s)" puisse la RESTAURER
+      // fidèlement quand on recoche l'activité (voir applyActivityFilter) —
+      // sans ça, la couleur d'origine serait perdue une fois écrasée par
+      // le blanc du filtrage.
+      return `<div class="split-part" data-choice="${escapeHtml(p.choice || "")}" data-original-style="${escapeHtml(style)}" style="${style}">${escapeHtml(p.text || "")}</div>`;
+    })
+    .join("");
+  return `<div class="split-cell-inner">${inner}</div>`;
 }
 
 function attachSplitCellHandlers() {
@@ -3811,21 +3979,6 @@ function escapeHtml(str) {
     .replace(/"/g, "&quot;");
 }
 
-// Dimensions de la page d'impression (voir @page plus haut : A4 paysage,
-// marges de 4mm), converties en pixels CSS (96dpi) pour pouvoir comparer
-// aux mesures DOM réelles (getBoundingClientRect).
-const MM_TO_PX = 96 / 25.4;
-const PRINT_PAGE_HEIGHT_PX = (210 - 4 - 4) * MM_TO_PX;
-const PRINT_BANNER_MIN_HEIGHT_PX = 22; // l'image ne descend jamais en dessous de cette hauteur
-const PRINT_PAGE_SAFETY_MARGIN_PX = 3;
-
-// Ajuste la hauteur du bandeau image en fonction de la place réellement
-// prise par le tableau, pour que le tout tienne sur une page :
-// - l'image ne dépasse jamais sa hauteur "naturelle" (largeur pleine page
-//   / ratio d'origine) ;
-// - si le tableau est trop grand, la hauteur de l'image est réduite (sans
-//   jamais descendre sous PRINT_BANNER_MIN_HEIGHT_PX) pour laisser de la
-//   place au planning.
 // ============================================================
 // CROSS-NAVIGATEUR (PDF) : hauteur des cases divisibles fusionnées
 // ============================================================
@@ -3836,8 +3989,8 @@ const PRINT_PAGE_SAFETY_MARGIN_PX = 3;
 // d'où un PDF "écrasé", texte et couleurs à peine visibles. On mesure
 // donc ici la hauteur réelle nécessaire de chaque ligne du tableau
 // fusionné, et on l'applique explicitement en pixels à toutes les
-// cases de cette ligne. Appelée AVANT adjustPrintBannerHeight, pour
-// que la hauteur du tableau mesurée ensuite soit déjà correcte.
+// cases de cette ligne. Appelée avant window.print() (voir
+// exportPlanningPDF), pour que la mise en page soit déjà correcte.
 function equalizePrintCellRowHeights(printAppEl) {
   if (!printAppEl) return;
   const table = printAppEl.querySelector("table");
@@ -4013,7 +4166,7 @@ function exportPlanningPDF() {
       }, 100);
     });
   };
-  // Le tableau est désormais imprimé directement en haut de la page.
+
   proceedToPrint();
 }
 </script>
