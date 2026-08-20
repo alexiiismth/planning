@@ -103,6 +103,23 @@
     table-layout: fixed;
   }
 
+  /* Annule le "width:100%" ci-dessus pour le tableau principal et le
+     mini-tableau figé de l'en-tête : avec "table-layout:fixed", un
+     tableau à "width:100%" s'étire pour occuper toute la largeur de son
+     conteneur, même si la somme des largeurs de colonnes (<col>) est
+     plus petite — l'espace en trop est alors redistribué sur TOUTES les
+     colonnes (y compris "Employé" et les semaines restées visibles),
+     ce qui les agrandit démesurément. Ce cas se produit précisément
+     quand une ou plusieurs semaines sont masquées (leurs <col> passent
+     à 0px, réduisant la somme totale). "width:auto" laisse le tableau
+     ne prendre que la largeur réellement nécessaire (somme des <col>),
+     exactement comme c'est déjà fait pour ".sticky-corner table" plus
+     bas. */
+  #app table,
+  #appHeader table {
+    width: auto;
+  }
+
   th, td {
     border: 1px solid var(--border-color);
     padding: 6px 8px;
@@ -2958,7 +2975,7 @@ function applyWeekVisibility(groups) {
       col.style.width = shouldHide ? "0px" : "var(--day-width)";
     });
 
-    document.querySelectorAll(`td.wk-${g.weekIndex}`).forEach((cell) => {
+    document.querySelectorAll(`td.wk-${g.weekIndex}, th.wk-${g.weekIndex}`).forEach((cell) => {
       cell.style.padding = shouldHide ? "0" : "";
       cell.style.overflow = shouldHide ? "hidden" : "";
       cell.style.borderWidth = shouldHide ? "0" : "";
@@ -3309,7 +3326,7 @@ function render(records, mappings) {
   let headHtml = "<thead><tr>";
   headHtml += `<th class="fixed-header" colspan="${fixedKeys.length}">${escapeHtml(FIXED_MERGED_LABEL)}</th>`;
   weekKeyGroups.forEach((group) => {
-    headHtml += `<th class="week-header" colspan="${group.keys.length}">${escapeHtml(group.label)}</th>`;
+    headHtml += `<th class="week-header wk-${group.weekIndex}" colspan="${group.keys.length}">${escapeHtml(group.label)}</th>`;
   });
   headHtml += "</tr></thead>";
 
