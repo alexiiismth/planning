@@ -2963,6 +2963,34 @@ function applyWeekVisibility(groups) {
       cell.style.overflow = shouldHide ? "hidden" : "";
       cell.style.borderWidth = shouldHide ? "0" : "";
     });
+
+    // IMPORTANT (corrige les cases "démesurées" au filtrage) : "overflow:
+    // hidden" + une largeur à 0 sur la <td> elle-même ne suffisent PAS à
+    // empêcher la ligne de grandir. Le texte d'activité est affiché dans
+    // ".split-part" (à l'intérieur de ".split-cell-inner"), qui a
+    // "white-space: pre-wrap" + "word-break: break-word" : une fois sa
+    // colonne ramenée à 0px, ce même texte se retrouve forcé de se
+    // scinder caractère par caractère sur une largeur quasi nulle, ce qui
+    // réclame une hauteur énorme (parfois plus de 1000px) pour tout
+    // faire tenir. Or la hauteur d'une ligne de tableau HTML est
+    // TOUJOURS celle de sa case la plus haute (le "overflow:hidden" posé
+    // sur la <td> ne change rien à ce calcul, propre aux tableaux) :
+    // cette seule case suffisait donc à agrandir démesurément toute la
+    // ligne, y compris les colonnes "Employé" et les autres jours restés
+    // visibles. En forçant "white-space: nowrap" sur ces éléments internes
+    // pendant le masquage, le texte reste sur une seule ligne (invisible,
+    // puisque la colonne fait 0px de large et que la case a
+    // "overflow:hidden") : sa hauteur naturelle redevient minime, et la
+    // ligne retrouve sa hauteur normale.
+    document
+      .querySelectorAll(
+        `td.wk-${g.weekIndex} .split-cell-inner, td.wk-${g.weekIndex} .split-part`
+      )
+      .forEach((el) => {
+        el.style.whiteSpace = shouldHide ? "nowrap" : "";
+        el.style.overflow = shouldHide ? "hidden" : "";
+        el.style.minHeight = shouldHide ? "0" : "";
+      });
   });
   applyFixedTableWidth(groups);
 }
