@@ -1224,7 +1224,18 @@
   body.pdf-merge-mode #printApp td.print-choice-cell .split-cell-inner {
     display: flex !important;
     flex-direction: column !important;
-    min-height: 0 !important;
+    /* PAS de "min-height: 0 !important" ici : cette règle écraserait
+       systématiquement la hauteur posée par JavaScript juste avant
+       l'impression (voir equalizePrintCellRowHeights), puisqu'un style
+       inline SANS !important est toujours perdant face à une règle de
+       feuille de style AVEC !important — c'est précisément ce qui
+       empêchait les couleurs de remplir toute la case : la hauteur
+       calculée était bien posée en JS, mais silencieusement annulée par
+       cette règle. Sans !important ici, le style inline (min-height en
+       pixels) prend le dessus normalement, comme attendu.
+       (equalizePrintCellRowHeights pose lui-même la priorité "important"
+       en plus, par sécurité — voir ce fichier.) */
+    min-height: 0;
   }
 
   body.pdf-merge-mode #printApp td.print-choice-cell .split-part {
@@ -3645,7 +3656,7 @@ function equalizeSplitCellRowHeights() {
 
     // 1) Revient à la hauteur naturelle de chaque case avant de mesurer
     //    (sinon on mesurerait une hauteur déjà forcée par un rendu précédent).
-    inners.forEach((inner) => { inner.style.minHeight = ""; });
+    inners.forEach((inner) => { inner.style.removeProperty("min-height"); });
 
     // 2) Hauteur réellement nécessaire : la plus grande des cases de la ligne.
     let maxHeight = 0;
@@ -3654,8 +3665,11 @@ function equalizeSplitCellRowHeights() {
     });
 
     // 3) Applique cette hauteur à TOUTES les cases de la ligne, en dur.
+    //    Priorité "important" par sécurité : un style inline sans
+    //    !important perd toujours face à une règle CSS avec !important,
+    //    même ajoutée plus tard dans la feuille de style.
     inners.forEach((inner) => {
-      inner.style.minHeight = maxHeight.toFixed(1) + "px";
+      inner.style.setProperty("min-height", maxHeight.toFixed(1) + "px", "important");
     });
   });
 }
@@ -4046,7 +4060,7 @@ function equalizePrintCellRowHeights(printAppEl) {
 
     // Revient d'abord à la hauteur naturelle de chaque case, pour que la
     // ligne elle-même retrouve aussi sa hauteur naturelle avant mesure.
-    inners.forEach((inner) => { inner.style.minHeight = ""; });
+    inners.forEach((inner) => { inner.style.removeProperty("min-height"); });
 
     // IMPORTANT : la hauteur à viser est celle de la LIGNE entière
     // (row.getBoundingClientRect), pas seulement le plus haut des cases
@@ -4067,7 +4081,16 @@ function equalizePrintCellRowHeights(printAppEl) {
       const verticalPadding =
         parseFloat(cs.paddingTop || "0") + parseFloat(cs.paddingBottom || "0");
       const targetHeight = Math.max(0, rowHeight - verticalPadding);
-      inner.style.minHeight = targetHeight.toFixed(1) + "px";
+      // Posé avec la priorité "important" : un style inline SANS
+      // !important perd TOUJOURS face à une règle de feuille de style
+      // AVEC !important, même si elle est déclarée avant dans le CSS.
+      // C'était précisément la cause du bug "les couleurs ne remplissent
+      // pas toute la case" — cette hauteur était bien calculée puis
+      // posée, mais silencieusement annulée par une règle CSS
+      // "min-height: 0 !important" ailleurs dans la feuille de style. En
+      // posant nous-mêmes la priorité "important", on est certain que
+      // cette valeur l'emporte quoi qu'il arrive.
+      inner.style.setProperty("min-height", targetHeight.toFixed(1) + "px", "important");
     });
   });
 }
