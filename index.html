@@ -1089,8 +1089,23 @@
 
   body.pdf-merge-mode #printApp {
     display: block !important;
-    width: 100% !important;
-    max-width: 100% !important;
+    /* Largeur imposée à la largeur RÉELLE de la page imprimée (A4 paysage
+       297mm, moins les marges de 4mm de chaque côté définies dans la
+       règle @page ci-dessus = 289mm), plutôt qu'à 100% de la largeur de
+       l'écran. Sans ça, le texte des cases se répartit sur MOINS (ou
+       PLUS) de lignes à l'écran qu'une fois réellement imprimé — dès que
+       la fenêtre du navigateur est plus large que la page A4, le texte
+       tient sur moins de lignes au moment où l'on mesure la hauteur des
+       lignes (juste avant l'impression, voir equalizePrintCellRowHeights)
+       que dans le PDF final, où les colonnes sont plus étroites : la
+       hauteur calculée était alors trop juste, et le bas du texte se
+       retrouvait coupé par le bord de la case. En forçant ici la même
+       largeur que celle utilisée à l'impression, le texte se répartit
+       exactement sur le même nombre de lignes au moment de la mesure et
+       au moment de l'impression : la hauteur calculée est donc toujours
+       fidèle. */
+    width: 289mm !important;
+    max-width: 289mm !important;
     margin: 0 !important;
     padding: 0 !important;
   }
