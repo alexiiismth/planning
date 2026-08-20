@@ -1200,7 +1200,14 @@
     text-align: left !important;
     background: #ffffff !important;
     color: #333 !important;
-    padding: 0 !important;
+    /* La bordure de la case est un box-shadow "inset" de 1px (voir la
+       règle générale th/td plus haut). Sans un minimum de marge intérieure,
+       les bandes de couleur (.split-part), qui remplissent tout l'espace
+       disponible, seraient peintes PAR-DESSUS ce trait de 1px et le
+       cacheraient. Ce padding de 1px laisse justement la place pile
+       nécessaire pour que le trait noir reste visible tout autour de la
+       case, sans empiéter dessus. */
+    padding: 1px !important;
     vertical-align: top !important;
   }
 
@@ -1901,6 +1908,26 @@
     color: #333;
     background:#fbfbfc;
   }
+  /* grille de boutons colorés (remplace l'ancien <select> : chaque
+     activité est un bouton de sa propre couleur, cliqué directement) */
+  .mock-choice-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-bottom: 8px;
+  }
+  .mock-choice-btn {
+    border: none;
+    border-radius: 6px;
+    padding: 5px 9px;
+    font-size: 11px;
+    font-weight: 700;
+    font-family: var(--font);
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08);
+  }
+  .mock-choice-btn.selected {
+    box-shadow: inset 0 0 0 2px var(--accent);
+  }
   .mock-editor-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:14px; }
   .mock-btn { padding: 7px 14px; border-radius: 7px; font-size: 12.5px; font-weight:700; border:none; }
   .mock-btn.cancel { background:#eceff2; color:#555; }
@@ -1940,11 +1967,6 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
-  }
-  .pdf-banner {
-    height: 22px;
-    border-radius: 4px;
-    background: linear-gradient(90deg, var(--fixed-bg), var(--header-bg));
   }
   .pdf-table { flex: 1; border: 1px solid #dfe3e8; border-radius: 4px; overflow: hidden; display:flex; flex-direction:column;}
   .pdf-row { flex:1; display:flex; border-bottom: 1px solid #eceff3; }
@@ -2157,7 +2179,7 @@
       <ol class="steps">
         <li><strong>Cliquez</strong> sur la case du jour concerné → un encadré ("Modifier la case") s'ouvre par-dessus l'écran.</li>
         <li>Utilisez les boutons <strong>−</strong> et <strong>+</strong> pour choisir en combien de parties diviser la case.</li>
-        <li>Pour chaque partie : choisissez <strong>une</strong> activité dans la liste déroulante (ou "— Aucune —" pour une case sans couleur), puis tapez le texte souhaité dans la zone en dessous.</li>
+        <li>Pour chaque partie : cliquez sur <strong>l'activité voulue</strong> dans la grille de boutons colorés (ou "— Aucune —" pour une case sans couleur), puis tapez le texte souhaité dans la zone en dessous. Le bouton choisi reste encadré pour montrer la sélection en cours.</li>
         <li>Cliquez sur <strong>Enregistrer</strong> pour valider — ou <strong>Annuler</strong> pour fermer sans rien changer.</li>
         <li>La case affiche alors une bande par partie, colorée selon l'activité choisie, avec son texte.</li>
       </ol>
@@ -2172,13 +2194,35 @@
           </div>
           <div class="mock-editor-part">
             <label>Partie 1 — activité</label>
-            <div class="mock-select">Chantiers</div>
+            <div class="mock-choice-grid">
+              <button class="mock-choice-btn" style="background:#f5f5f5;color:#666;">— Aucune —</button>
+              <button class="mock-choice-btn" style="background:#e74c3c;color:#333333;">Absences</button>
+              <button class="mock-choice-btn selected" style="background:#87ceeb;color:#003049;">Chantiers</button>
+              <button class="mock-choice-btn" style="background:#2ecc71;color:#053a1e;">Rapport</button>
+              <button class="mock-choice-btn" style="background:#4a4a4a;color:#fff;">Réunion</button>
+              <button class="mock-choice-btn" style="background:#e0e0e0;color:#333333;">Administratif</button>
+              <button class="mock-choice-btn" style="background:#f1c40f;color:#4a3b00;">Essai labo</button>
+              <button class="mock-choice-btn" style="background:#1a3a6e;color:#fff;">Recherche</button>
+              <button class="mock-choice-btn" style="background:#ffc0cb;color:#5c0011;">Formation</button>
+              <button class="mock-choice-btn" style="background:#ffffff;color:#333333;box-shadow:inset 0 0 0 1px #999;">Grève</button>
+            </div>
             <label>Texte</label>
             <div class="mock-textarea">Chantier rénovation toiture — équipe A</div>
           </div>
           <div class="mock-editor-part">
             <label>Partie 2 — activité</label>
-            <div class="mock-select">Formation</div>
+            <div class="mock-choice-grid">
+              <button class="mock-choice-btn" style="background:#f5f5f5;color:#666;">— Aucune —</button>
+              <button class="mock-choice-btn" style="background:#e74c3c;color:#333333;">Absences</button>
+              <button class="mock-choice-btn" style="background:#87ceeb;color:#003049;">Chantiers</button>
+              <button class="mock-choice-btn" style="background:#2ecc71;color:#053a1e;">Rapport</button>
+              <button class="mock-choice-btn" style="background:#4a4a4a;color:#fff;">Réunion</button>
+              <button class="mock-choice-btn" style="background:#e0e0e0;color:#333333;">Administratif</button>
+              <button class="mock-choice-btn" style="background:#f1c40f;color:#4a3b00;">Essai labo</button>
+              <button class="mock-choice-btn" style="background:#1a3a6e;color:#fff;">Recherche</button>
+              <button class="mock-choice-btn selected" style="background:#ffc0cb;color:#5c0011;">Formation</button>
+              <button class="mock-choice-btn" style="background:#ffffff;color:#333333;box-shadow:inset 0 0 0 1px #999;">Grève</button>
+            </div>
             <label>Texte</label>
             <div class="mock-textarea">Formation habilitation électrique (après-midi)</div>
           </div>
@@ -2348,7 +2392,6 @@
 
       <div class="figure">
         <div class="pdf-page">
-          <div class="pdf-banner"></div>
           <div class="pdf-table">
             <div class="pdf-row pdf-head"><div class="pdf-cell"></div><div class="pdf-cell"></div><div class="pdf-cell"></div><div class="pdf-cell"></div><div class="pdf-cell"></div></div>
             <div class="pdf-row pdf-fixedcol"><div class="pdf-cell"></div><div class="pdf-cell" style="background:#87ceeb;"></div><div class="pdf-cell" style="background:#4a4a4a;"></div><div class="pdf-cell"></div><div class="pdf-cell" style="background:#f1c40f;"></div></div>
@@ -2356,16 +2399,17 @@
             <div class="pdf-row pdf-fixedcol"><div class="pdf-cell"></div><div class="pdf-cell"></div><div class="pdf-cell" style="background:#ffc0cb;"></div><div class="pdf-cell"></div><div class="pdf-cell" style="background:#87ceeb;"></div></div>
           </div>
         </div>
-        <div class="figure-caption">📄 Aperçu schématique de la page générée : bandeau d'en-tête, mois complet, couleurs conservées.</div>
+        <div class="figure-caption">📄 Aperçu schématique de la page générée : le tableau commence tout en haut de la page, mois complet, couleurs conservées.</div>
       </div>
 
       <p>Ce que contient toujours le PDF généré :</p>
       <ul>
-        <li>le bandeau d'en-tête (image) en haut de la page ;</li>
+        <li>le planning commence directement en haut de la page (aucun bandeau ni logo au-dessus) ;</li>
         <li>le mois <strong>complet</strong>, même si certaines semaines étaient masquées à l'écran ;</li>
-        <li>les couleurs et le texte de chaque activité, fidèles à l'écran ;</li>
+        <li>les couleurs et le texte de chaque activité, fidèles à l'écran, avec le texte aligné à gauche dans chaque case ;</li>
+        <li>des traits noirs bien visibles tout autour de chaque case, quel que soit le navigateur utilisé pour imprimer ;</li>
         <li>une colonne "date" fusionnée avec les tâches, optimisée pour l'impression ;</li>
-        <li>les cases à plusieurs activités qui s'étirent correctement (voir <a href="#hauteur-auto">section 5</a>).</li>
+        <li>les cases à plusieurs activités qui s'étirent correctement, en remplissant toute la hauteur disponible (voir <a href="#hauteur-auto">section 5</a>).</li>
       </ul>
 
       <ol class="steps">
@@ -2418,7 +2462,6 @@
         <tr><td>Le tableau reste bloqué sur "Chargement…"</td><td>Aucune donnée n'a été reçue de Grist après quelques secondes. Vérifiez que le widget est bien rattaché à la bonne table/vue et que les colonnes attendues sont configurées.</td></tr>
         <tr><td>L'encadré d'une case ne s'ouvre pas au clic</td><td>Vérifiez que vous cliquez bien sur une case du corps du tableau (pas sur la ligne des dates figée) et que vous n'êtes pas déjà en train d'éditer une autre case.</td></tr>
         <tr><td>Le PDF n'affiche pas tout le mois</td><td>Ce cas ne devrait normalement pas se produire (le mois complet est forcé à l'export). Si c'est le cas, signalez-le : cela peut venir d'une date mal reconnue dans une colonne.</td></tr>
-        <tr><td>Le bandeau d'en-tête ne s'affiche pas dans le PDF</td><td>Attendez quelques instants avant de valider l'impression : l'image doit finir de se charger avant l'ouverture de la boîte de dialogue. Relancez l'export si besoin.</td></tr>
         <tr><td>Une case reste "en blanc" en bas alors qu'une autre case de la ligne a plusieurs activités</td><td>Cela ne devrait plus arriver (voir <a href="#hauteur-auto">section 5</a>). Si le cas se présente malgré tout, signalez-le avec une capture d'écran.</td></tr>
       </table>
     </section>
@@ -2432,7 +2475,7 @@
         <tr><th>Action</th><th>Comment faire</th></tr>
         <tr><td><strong>Saisir le nom d'un employé</strong></td><td>Clic sur la case → taper → <kbd>Entrée</kbd> ou clic ailleurs</td></tr>
         <tr><td><strong>Découper une case en parties</strong></td><td>Clic sur la case du jour → boutons − / + → Enregistrer</td></tr>
-        <tr><td><strong>Choisir l'activité d'une partie</strong></td><td>Dans l'encadré : liste déroulante de la partie concernée</td></tr>
+        <tr><td><strong>Choisir l'activité d'une partie</strong></td><td>Dans l'encadré : clic sur le bouton coloré de l'activité voulue</td></tr>
         <tr><td><strong>Modifier une case déjà découpée</strong></td><td>Rouvrir la case → ajuster → Enregistrer</td></tr>
         <tr><td><strong>Masquer une semaine</strong></td><td>Clic sur le bouton "Semaine X"</td></tr>
         <tr><td><strong>Réafficher une semaine</strong></td><td>Recliquer sur le même bouton</td></tr>
@@ -4001,15 +4044,30 @@ function equalizePrintCellRowHeights(printAppEl) {
     const inners = row.querySelectorAll(":scope > td.print-choice-cell > .split-cell-inner");
     if (!inners.length) return;
 
+    // Revient d'abord à la hauteur naturelle de chaque case, pour que la
+    // ligne elle-même retrouve aussi sa hauteur naturelle avant mesure.
     inners.forEach((inner) => { inner.style.minHeight = ""; });
 
-    let maxHeight = 0;
-    inners.forEach((inner) => {
-      maxHeight = Math.max(maxHeight, inner.getBoundingClientRect().height);
-    });
+    // IMPORTANT : la hauteur à viser est celle de la LIGNE entière
+    // (row.getBoundingClientRect), pas seulement le plus haut des cases
+    // d'activités entre elles. Si une autre colonne de la ligne (ex. le
+    // nom de l'employé sur plusieurs lignes) est plus haute que toutes
+    // les cases d'activités réunies, c'est elle qui impose la hauteur
+    // réelle de la ligne dans le tableau — et sans ce recalage, les
+    // cases d'activités restaient alors plus courtes que la ligne
+    // effectivement affichée : la couleur ne remplissait pas tout
+    // l'espace visible (bug observé quand une case n'a qu'une seule
+    // activité, alors qu'une case voisine avec 2-3 activités atteignait
+    // déjà naturellement cette hauteur et semblait donc correcte).
+    const rowHeight = row.getBoundingClientRect().height;
 
     inners.forEach((inner) => {
-      inner.style.minHeight = maxHeight.toFixed(1) + "px";
+      const cell = inner.parentElement; // td.print-choice-cell
+      const cs = window.getComputedStyle(cell);
+      const verticalPadding =
+        parseFloat(cs.paddingTop || "0") + parseFloat(cs.paddingBottom || "0");
+      const targetHeight = Math.max(0, rowHeight - verticalPadding);
+      inner.style.minHeight = targetHeight.toFixed(1) + "px";
     });
   });
 }
