@@ -3760,20 +3760,37 @@ function equalizeSplitCellRowHeights() {
 
     // 1) Revient à la hauteur naturelle de chaque case avant de mesurer
     //    (sinon on mesurerait une hauteur déjà forcée par un rendu précédent).
-    inners.forEach((inner) => { inner.style.removeProperty("min-height"); });
-
-    // 2) Hauteur réellement nécessaire : la plus grande des cases de la ligne.
-    let maxHeight = 0;
     inners.forEach((inner) => {
-      maxHeight = Math.max(maxHeight, inner.getBoundingClientRect().height);
+      inner.style.removeProperty("height");
+      inner.style.removeProperty("min-height");
     });
 
-    // 3) Applique cette hauteur à TOUTES les cases de la ligne, en dur.
-    //    Priorité "important" par sécurité : un style inline sans
-    //    !important perd toujours face à une règle CSS avec !important,
-    //    même ajoutée plus tard dans la feuille de style.
+    // 2) POINT CLÉ (même bug que celui déjà corrigé pour le PDF, voir
+    //    equalizePrintCellRowHeights) : la hauteur à viser est celle de la
+    //    LIGNE entière (row.getBoundingClientRect), pas seulement la plus
+    //    haute des cases divisibles (.split-cell-inner) entre elles. Si une
+    //    autre colonne de la ligne (ex. le nom de l'employé sur plusieurs
+    //    lignes, dans une case "editable" à côté) est plus haute que toutes
+    //    les cases divisibles réunies, c'est elle qui impose la hauteur
+    //    réelle de la ligne dans le tableau — et sans ce recalage, les
+    //    cases divisibles restaient alors plus courtes que la ligne
+    //    effectivement affichée à l'écran : la couleur ne remplissait pas
+    //    tout l'espace visible de la case, même si tout redevenait correct
+    //    une fois exporté en PDF (le tableau imprimé utilise déjà la bonne
+    //    logique, voir equalizePrintCellRowHeights).
+    const rowHeight = row.getBoundingClientRect().height;
+
+    // 3) Applique cette hauteur à TOUTES les cases divisibles de la ligne,
+    //    en dur. On pose une HAUTEUR EXPLICITE (et pas seulement
+    //    min-height), gérée de façon plus cohérente entre navigateurs pour
+    //    étirer le conteneur flex interne ; min-height est conservée en
+    //    complément par sécurité. Priorité "important" : un style inline
+    //    sans !important perd toujours face à une règle CSS avec
+    //    !important, même ajoutée plus tard dans la feuille de style.
     inners.forEach((inner) => {
-      inner.style.setProperty("min-height", maxHeight.toFixed(1) + "px", "important");
+      const targetHeight = Math.max(0, Math.ceil(rowHeight));
+      inner.style.setProperty("height", targetHeight + "px", "important");
+      inner.style.setProperty("min-height", targetHeight + "px", "important");
     });
   });
 }
