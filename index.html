@@ -103,23 +103,6 @@
     table-layout: fixed;
   }
 
-  /* Annule le "width:100%" ci-dessus pour le tableau principal et le
-     mini-tableau figé de l'en-tête : avec "table-layout:fixed", un
-     tableau à "width:100%" s'étire pour occuper toute la largeur de son
-     conteneur, même si la somme des largeurs de colonnes (<col>) est
-     plus petite — l'espace en trop est alors redistribué sur TOUTES les
-     colonnes (y compris "Employé" et les semaines restées visibles),
-     ce qui les agrandit démesurément. Ce cas se produit précisément
-     quand une ou plusieurs semaines sont masquées (leurs <col> passent
-     à 0px, réduisant la somme totale). "width:auto" laisse le tableau
-     ne prendre que la largeur réellement nécessaire (somme des <col>),
-     exactement comme c'est déjà fait pour ".sticky-corner table" plus
-     bas. */
-  #app table,
-  #appHeader table {
-    width: auto;
-  }
-
   th, td {
     border: 1px solid var(--border-color);
     padding: 6px 8px;
@@ -2980,6 +2963,67 @@ function applyWeekVisibility(groups) {
       cell.style.overflow = shouldHide ? "hidden" : "";
       cell.style.borderWidth = shouldHide ? "0" : "";
     });
+  });
+  applyFixedTableWidth(groups);
+}
+
+// Pose une largeur EXPLICITE (en px) sur le tableau principal (#app) et
+// le mini-tableau figé de l'en-tête (#appHeader), au lieu de les laisser
+// à "width:100%" (règle globale "table" plus haut) ou "width:auto".
+//
+// POURQUOI C'EST NÉCESSAIRE (bug corrigé ici) :
+//  - Avec "width:100%" : dès qu'une semaine est masquée (ses <col>
+//    passent à 0px), la somme des largeurs de colonnes devient plus
+//    petite que 100% du conteneur. Le navigateur redistribue alors
+//    l'espace en trop sur TOUTES les colonnes non nulles (Employé,
+//    semaines restées visibles), qui deviennent démesurément larges.
+//  - Avec "width:auto" (tentative précédente) : c'est pire, car pour un
+//    tableau "table-layout:fixed" dont la largeur est "auto", les
+//    navigateurs appliquent quand même une largeur minimale par colonne
+//    basée sur son contenu — une colonne mise à "0px" ne reste donc PAS
+//    à 0px si sa case contient du texte (elle se rouvre légèrement), et
+//    les colonnes "Employé"/"Prénom" peuvent elles aussi être élargies
+//    au-delà de leur largeur prévue si un nom est un peu long. Résultat :
+//    la largeur réellement affichée par le navigateur pour la 1re
+//    colonne (Nom) ne correspond plus exactement à la variable
+//    "--col1-width" utilisée par ailleurs pour figer horizontalement la
+//    colonne "Prénom" (voir fixedColStickyAttrs → "left: var(--col1-width)"),
+//    d'où le décalage/espace visible entre les deux colonnes.
+//
+// La solution : calculer nous-mêmes la somme exacte des largeurs de
+// colonnes actuellement visibles (colonnes fixes + jours des semaines
+// non masquées) et la poser en style inline ("Npx", jamais "auto" ni
+// un pourcentage). Une largeur de tableau explicite et exactement égale
+// à la somme des <col> est le seul cas où le navigateur n'a ni surplus
+// à redistribuer, ni besoin d'imposer une largeur minimale basée sur le
+// contenu : chaque colonne (y compris celles à 0px) garde alors très
+// exactement la largeur qu'on lui a donnée.
+function applyFixedTableWidth(groups) {
+  const rootStyle = getComputedStyle(document.documentElement);
+  const col1 = parseFloat(rootStyle.getPropertyValue("--col1-width")) || 0;
+  const col2 = parseFloat(rootStyle.getPropertyValue("--col2-width")) || 0;
+  const dayW = parseFloat(rootStyle.getPropertyValue("--day-width")) || 0;
+
+  // Nombre de colonnes fixes ("Employé", etc.) : lu directement depuis
+  // l'attribut colspan du "th.fixed-header" déjà présent dans le DOM,
+  // pour ne pas dupliquer cette info dans une variable globale à part.
+  const fixedHeaderTh = document.querySelector(
+    "#app table th.fixed-header, #appHeader table th.fixed-header"
+  );
+  const fixedCount = fixedHeaderTh ? Number(fixedHeaderTh.getAttribute("colspan")) || 0 : 0;
+
+  let total = fixedCount > 0 ? col1 + col2 * Math.max(0, fixedCount - 1) : 0;
+
+  groups.forEach((g) => {
+    if (!hiddenWeeks.has(g.weekNum)) {
+      total += dayW * g.keys.length;
+    }
+  });
+
+  if (total <= 0) return;
+
+  document.querySelectorAll("#app table, #appHeader table").forEach((t) => {
+    t.style.width = `${total}px`;
   });
 }
 
