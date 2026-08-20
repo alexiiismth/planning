@@ -4060,7 +4060,10 @@ function equalizePrintCellRowHeights(printAppEl) {
 
     // Revient d'abord à la hauteur naturelle de chaque case, pour que la
     // ligne elle-même retrouve aussi sa hauteur naturelle avant mesure.
-    inners.forEach((inner) => { inner.style.removeProperty("min-height"); });
+    inners.forEach((inner) => {
+      inner.style.removeProperty("height");
+      inner.style.removeProperty("min-height");
+    });
 
     // IMPORTANT : la hauteur à viser est celle de la LIGNE entière
     // (row.getBoundingClientRect), pas seulement le plus haut des cases
@@ -4080,17 +4083,27 @@ function equalizePrintCellRowHeights(printAppEl) {
       const cs = window.getComputedStyle(cell);
       const verticalPadding =
         parseFloat(cs.paddingTop || "0") + parseFloat(cs.paddingBottom || "0");
-      const targetHeight = Math.max(0, rowHeight - verticalPadding);
-      // Posé avec la priorité "important" : un style inline SANS
-      // !important perd TOUJOURS face à une règle de feuille de style
-      // AVEC !important, même si elle est déclarée avant dans le CSS.
-      // C'était précisément la cause du bug "les couleurs ne remplissent
-      // pas toute la case" — cette hauteur était bien calculée puis
-      // posée, mais silencieusement annulée par une règle CSS
-      // "min-height: 0 !important" ailleurs dans la feuille de style. En
-      // posant nous-mêmes la priorité "important", on est certain que
-      // cette valeur l'emporte quoi qu'il arrive.
-      inner.style.setProperty("min-height", targetHeight.toFixed(1) + "px", "important");
+      // Arrondi vers le HAUT (Math.ceil) : mieux vaut 1px de trop (invisible,
+      // absorbé par l'"overflow:hidden" du <td>) qu'1px de manque (petit
+      // espace blanc résiduel en bas, observé sous Edge avec un simple
+      // toFixed) — les navigateurs n'arrondissent pas toujours les valeurs
+      // sous-pixel de la même façon à l'impression.
+      const targetHeight = Math.max(0, Math.ceil(rowHeight - verticalPadding));
+
+      // POINT CLÉ (bug Firefox) : une "min-height" seule sur un <div> flex
+      // imbriqué dans une cellule de tableau n'est pas toujours suffisante
+      // pour forcer son étirement — certains moteurs (Firefox en tête) ne
+      // la propagent pas de façon fiable dans ce contexte précis. On pose
+      // donc une HAUTEUR EXPLICITE (et pas seulement min-height), qui est
+      // gérée de façon beaucoup plus cohérente dans tous les navigateurs.
+      // min-height est conservée en complément, par sécurité (elle ne
+      // peut de toute façon jamais réduire en dessous de "height").
+      // Les deux sont posées avec la priorité "important" : un style
+      // inline SANS !important perd TOUJOURS face à une règle CSS AVEC
+      // !important, même déclarée avant dans la feuille de style — c'est
+      // précisément ce qui empêchait toute prise d'effet auparavant.
+      inner.style.setProperty("height", targetHeight + "px", "important");
+      inner.style.setProperty("min-height", targetHeight + "px", "important");
     });
   });
 }
