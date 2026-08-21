@@ -125,6 +125,19 @@
     text-align: center;
   }
 
+  /* Ligne séparatrice entre chaque semaine : la bordure gauche de la
+     première colonne (jour) de chaque semaine — sauf la toute première,
+     déjà délimitée par les colonnes fixes "Employé" — est épaissie et
+     noircie pour bien marquer visuellement la frontière entre deux
+     semaines. La classe "week-start" est posée en JS sur cette case,
+     aussi bien dans l'en-tête ("Semaine X"), la ligne des dates (mini-
+     tableau figé) que dans chaque ligne employé du tableau principal,
+     pour que le trait soit continu sur toute la hauteur du tableau. */
+  td.week-start,
+  th.week-start {
+    border-left: 3px solid #000000 !important;
+  }
+
   td.editable {
     cursor: text;
     min-height: var(--cell-min-height);
@@ -471,6 +484,36 @@
      exportPlanningPDF / buildPrintTableHtml). Invisible à l'écran. */
   #printApp {
     display: none;
+  }
+
+  /* Barre de défilement horizontale toujours accessible : collée en bas
+     de la fenêtre (position: sticky + bottom:0), plutôt qu'en bas du
+     tableau (qui peut être très haut si beaucoup d'employés). On y garde
+     l'utilisateur au même niveau de défilement horizontal que le tableau
+     principal (voir syncHScrollFromMain / syncHScrollFromBar en JS). */
+  .sticky-hscroll {
+    position: sticky;
+    bottom: 0;
+    z-index: 41;
+    overflow-x: auto;
+    overflow-y: hidden;
+    background: #fff;
+    border-top: 1px solid #ddd;
+    /* Une hauteur minimale même si le navigateur affiche une scrollbar
+       fine (overlay), pour que la zone reste facilement cliquable. */
+    height: 16px;
+  }
+
+  /* Masquée quand le tableau tient entièrement dans la largeur visible
+     (rien à faire défiler) : voir updateStickyHScrollWidth. */
+  .sticky-hscroll.is-hidden {
+    display: none;
+  }
+
+  .sticky-hscroll-spacer {
+    /* Largeur posée dynamiquement en JS = largeur réelle du tableau, pour
+       offrir exactement la même plage de défilement que #scrollWrap. */
+    height: 1px;
   }
 
   .week-buttons {
@@ -890,6 +933,7 @@
     .week-buttons,
     .split-editor-overlay,
     .sticky-corner,
+    .sticky-hscroll,
     #fatal-error-box {
       display: none !important;
     }
@@ -2585,6 +2629,17 @@
   <div id="app"></div>
 </div>
 
+<!-- Barre de défilement horizontale "fantôme", toujours visible en bas de
+     l'écran (position: sticky), même quand on n'est pas tout en bas du
+     widget. Elle ne contient aucune donnée : juste un bloc invisible dont
+     la largeur est calée sur celle du tableau réel (voir
+     updateStickyHScrollWidth), pour offrir la même plage de défilement.
+     Son défilement est synchronisé dans les deux sens avec le vrai
+     tableau (#scrollWrap) via syncHScrollFrom*(). -->
+<div class="sticky-hscroll" id="stickyHScroll">
+  <div class="sticky-hscroll-spacer" id="stickyHScrollSpacer"></div>
+</div>
+
 <div class="split-editor-overlay" id="splitEditorOverlay">
   <div class="split-editor" id="splitEditor"></div>
 </div>
@@ -2681,10 +2736,48 @@ function getISOWeekNumber(date) {
 // héritent de la semaine de la dernière colonne de date rencontrée.
 function findFirstDateInColumn(records, key) {
   for (let r = 0; r < records.length; r++) {
-    const d = parseFrenchDateFromValue(records[r][key]);
+    const d = parseFrenchDateFromValue(records[r][key], key);
     if (d) return d;
   }
   return null;
+}
+
+// Une colonne Grist de type "Date" ou "DateTime[:fuseau]" ne stocke PAS du
+// texte JJ/MM/AAAA dans sa case : la valeur brute reçue est un nombre de
+// secondes depuis l'epoch Unix (UTC). columnTypesCache (rempli par
+// ensureColumnTypesLoaded, voir plus bas) donne le vrai type Grist de
+// chaque colonne mappée, ce qui permet de distinguer ce cas des colonnes
+// Texte/ChoiceList "JJ/MM/AAAA" gérées jusqu'ici.
+function isDateLikeColumnType(type) {
+  return typeof type === "string" && (type === "Date" || type.indexOf("DateTime") === 0);
+}
+
+// Convertit la valeur brute (secondes depuis l'epoch UTC) d'une case
+// Date/DateTime Grist en objet Date JS classique. On recale sur le jour
+// calendaire UTC (plutôt que de garder l'heure locale du navigateur), pour
+// rester cohérent avec parseFrenchDateText ci-dessous, qui crée lui aussi
+// un Date "local minuit" à partir d'un JJ/MM/AAAA — sans ça, un décalage de
+// fuseau horaire pourrait faire glisser certaines dates d'un jour.
+function gristEpochToDate(seconds) {
+  if (typeof seconds !== "number" || !isFinite(seconds)) return null;
+  const d = new Date(seconds * 1000);
+  return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
+
+// Inverse de gristEpochToDate : reconstruit le nombre de secondes UTC
+// (minuit UTC du même jour calendaire) attendu par l'API Grist en écriture
+// pour une colonne Date/DateTime.
+function dateToGristEpoch(date) {
+  return Math.floor(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 1000);
+}
+
+// Formate un Date JS en "JJ/MM/AAAA", pour l'affichage des vraies colonnes
+// Date Grist (symétrique de parseFrenchDateText).
+function formatDateFR(date) {
+  const dd = String(date.getDate()).padStart(2, "0");
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const yyyy = date.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
 }
 
 // Regroupe les colonnes de dayKeys en "jours" : chaque colonne contenant une
@@ -2788,7 +2881,13 @@ function computeWeekendKeySet(records, dayKeys) {
 // ou ["L", "01/08/2026"]). On gère les deux cas en normalisant d'abord la
 // valeur en liste de chaînes via extractChoiceItems, puis en essayant de
 // parser chaque élément.
-function parseFrenchDateFromValue(value) {
+function parseFrenchDateFromValue(value, key) {
+  // Vraie colonne Date/DateTime Grist : la valeur brute est un nombre de
+  // secondes depuis l'epoch (ou false/null si la case est vide), pas du
+  // texte — voir isDateLikeColumnType/gristEpochToDate ci-dessus.
+  if (key && isDateLikeColumnType(columnTypesCache[key])) {
+    return typeof value === "number" ? gristEpochToDate(value) : null;
+  }
   if (typeof value === "string") return parseFrenchDateText(value);
   const items = extractChoiceItems(value);
   for (let i = 0; i < items.length; i++) {
@@ -3073,6 +3172,11 @@ function updateWeekButtonStyles() {
 const __scrollWrapEl = document.getElementById("scrollWrap");
 if (__scrollWrapEl) {
   __scrollWrapEl.addEventListener("scroll", syncStickyHeaderScroll);
+  __scrollWrapEl.addEventListener("scroll", syncHScrollFromMain);
+}
+const __stickyHScrollEl = document.getElementById("stickyHScroll");
+if (__stickyHScrollEl) {
+  __stickyHScrollEl.addEventListener("scroll", syncHScrollFromBar);
 }
 
 try {
@@ -3397,8 +3501,12 @@ function render(records, mappings) {
   // ---- En-tête (Employé / Semaine X) : va dans le mini-tableau figé ----
   let headHtml = "<thead><tr>";
   headHtml += `<th class="fixed-header" colspan="${fixedKeys.length}">${escapeHtml(FIXED_MERGED_LABEL)}</th>`;
-  weekKeyGroups.forEach((group) => {
-    headHtml += `<th class="week-header wk-${group.weekIndex}" colspan="${group.keys.length}">${escapeHtml(group.label)}</th>`;
+  weekKeyGroups.forEach((group, groupIdx) => {
+    // "week-start" sur toutes les en-têtes de semaine SAUF la première
+    // (déjà délimitée par les colonnes fixes juste avant) : voir la règle
+    // CSS "td.week-start, th.week-start" plus haut.
+    const weekStartClass = groupIdx > 0 ? " week-start" : "";
+    headHtml += `<th class="week-header${weekStartClass} wk-${group.weekIndex}" colspan="${group.keys.length}">${escapeHtml(group.label)}</th>`;
   });
   headHtml += "</tr></thead>";
 
@@ -3430,23 +3538,39 @@ function render(records, mappings) {
       rowHtml += `<td class="editable${highlight}${fixedColStickyAttrs(i)}" data-row-id="${record.id}" data-col="${key}">${escapeHtml(plainText)}</td>`;
     });
 
-    weekKeyGroups.forEach((group) => {
-      group.keys.forEach((key) => {
+    weekKeyGroups.forEach((group, groupIdx) => {
+      // "week-start" uniquement sur la 1re colonne (jour) de chaque
+      // semaine, sauf la toute première semaine du tableau (voir la même
+      // logique appliquée à l'en-tête ci-dessus).
+      const isFirstWeekOfTable = groupIdx === 0;
+
+      group.keys.forEach((key, keyIdx) => {
         const rawValue = record[key];
         cellOriginalValues[`${record.id}_${key}`] = rawValue;
+        const weekStartClass = !isFirstWeekOfTable && keyIdx === 0 ? " week-start" : "";
+        const isGristDateCol = isDateLikeColumnType(columnTypesCache[key]);
 
         if (isDateRow) {
-          // Ligne des dates : simple texte éditable (JJ/MM ou JJ/MM/AAAA).
-          const dateItems = extractChoiceItems(rawValue);
-          const dateText = dateItems.length ? dateItems.join(", ") : String(rawValue ?? "");
-          rowHtml += `<td class="editable date-cell wk-${group.weekIndex}" data-row-id="${record.id}" data-col="${key}" data-cell-type="date">${escapeHtml(dateText)}</td>`;
+          // Ligne des dates : simple texte éditable (JJ/MM/AAAA). Les vraies
+          // colonnes Date/DateTime Grist stockent un nombre de secondes
+          // depuis l'epoch (et non du texte) : on les reformate en JJ/MM/AAAA
+          // pour l'affichage, comme pour les colonnes texte existantes.
+          let dateText;
+          if (isGristDateCol) {
+            const d = parseFrenchDateFromValue(rawValue, key);
+            dateText = d ? formatDateFR(d) : "";
+          } else {
+            const dateItems = extractChoiceItems(rawValue);
+            dateText = dateItems.length ? dateItems.join(", ") : String(rawValue ?? "");
+          }
+          rowHtml += `<td class="editable date-cell${weekStartClass} wk-${group.weekIndex}" data-row-id="${record.id}" data-col="${key}" data-cell-type="date">${escapeHtml(dateText)}</td>`;
           return;
         }
 
         // Case "employé" d'un jour donné : case divisible en plusieurs
         // parties, chacune avec une couleur d'activité et un texte libre.
         const parts = parseCellParts(rawValue);
-        rowHtml += `<td class="split-cell wk-${group.weekIndex}" data-row-id="${record.id}" data-col="${key}">${renderSplitCellContent(parts)}</td>`;
+        rowHtml += `<td class="split-cell${weekStartClass} wk-${group.weekIndex}" data-row-id="${record.id}" data-col="${key}">${renderSplitCellContent(parts)}</td>`;
       });
     });
 
@@ -3524,6 +3648,7 @@ function render(records, mappings) {
   applyActivityFilter();
   updateStickyOffsets();
   syncStickyHeaderScroll();
+  updateStickyHScrollWidth();
   scheduleEqualizeSplitCellRowHeights();
 }
 
@@ -3829,10 +3954,67 @@ function syncStickyHeaderScroll() {
   headerScrollEl.style.transform = `translateX(${-scrollWrapEl.scrollLeft}px)`;
 }
 
+// ============================================================
+// BARRE DE DÉFILEMENT HORIZONTALE TOUJOURS VISIBLE (collée en bas)
+// ============================================================
+// Garde-fou anti boucle infinie : positionner scrollLeft sur l'un des
+// deux conteneurs déclenche son propre événement "scroll", qui doit
+// remettre à jour l'AUTRE conteneur, mais surtout pas se re-déclencher
+// lui-même indéfiniment.
+let _isSyncingHScroll = false;
+
+function syncHScrollFromMain() {
+  if (_isSyncingHScroll) return;
+  const scrollWrapEl = document.getElementById("scrollWrap");
+  const barEl = document.getElementById("stickyHScroll");
+  if (!scrollWrapEl || !barEl) return;
+  _isSyncingHScroll = true;
+  barEl.scrollLeft = scrollWrapEl.scrollLeft;
+  _isSyncingHScroll = false;
+}
+
+function syncHScrollFromBar() {
+  if (_isSyncingHScroll) return;
+  const scrollWrapEl = document.getElementById("scrollWrap");
+  const barEl = document.getElementById("stickyHScroll");
+  if (!scrollWrapEl || !barEl) return;
+  _isSyncingHScroll = true;
+  scrollWrapEl.scrollLeft = barEl.scrollLeft;
+  _isSyncingHScroll = false;
+  // #scrollWrap a son propre écouteur "scroll" (voir plus bas), mais on
+  // force explicitement la synchro du mini-tableau figé ici aussi : selon
+  // le navigateur, poser "scrollLeft" par programme ne redéclenche pas
+  // toujours immédiatement l'événement "scroll" natif.
+  syncStickyHeaderScroll();
+}
+
+// Cale la largeur (donc la plage de défilement) de la barre fantôme sur
+// la largeur réelle du tableau, et masque la barre si tout tient déjà
+// dans la largeur visible (rien à faire défiler). Appelée après chaque
+// rendu et au redimensionnement de la fenêtre.
+function updateStickyHScrollWidth() {
+  const scrollWrapEl = document.getElementById("scrollWrap");
+  const appEl = document.getElementById("app");
+  const barEl = document.getElementById("stickyHScroll");
+  const spacerEl = document.getElementById("stickyHScrollSpacer");
+  if (!scrollWrapEl || !appEl || !barEl || !spacerEl) return;
+
+  const contentWidth = appEl.scrollWidth;
+  spacerEl.style.width = contentWidth + "px";
+
+  const hasOverflow = contentWidth > scrollWrapEl.clientWidth + 1;
+  barEl.classList.toggle("is-hidden", !hasOverflow);
+
+  syncHScrollFromMain();
+}
+
 let _stickyResizeRaf = null;
 window.addEventListener("resize", () => {
   if (_stickyResizeRaf) cancelAnimationFrame(_stickyResizeRaf);
-  _stickyResizeRaf = requestAnimationFrame(updateStickyOffsets);
+  _stickyResizeRaf = requestAnimationFrame(() => {
+    updateStickyOffsets();
+    updateStickyHScrollWidth();
+  });
   scheduleEqualizeSplitCellRowHeights();
 });
 
@@ -3881,10 +4063,33 @@ async function saveTextValue(rowId, colId, newText) {
 async function saveDateCell(rowId, colId, newText, cellEl) {
   try {
     const trimmed = newText.trim();
-    const valueToSend = trimmed.length > 0 ? ["L", trimmed] : ["L"];
+    const isGristDateCol = isDateLikeColumnType(columnTypesCache[colId]);
+    let valueToSend;
+    let displayText = trimmed;
+
+    if (isGristDateCol) {
+      // Vraie colonne Date/DateTime Grist : il faut envoyer un nombre de
+      // secondes depuis l'epoch (voir dateToGristEpoch), jamais une
+      // ChoiceList ["L", ...] — Grist refuserait l'écriture (type invalide).
+      if (trimmed.length === 0) {
+        valueToSend = null;
+      } else {
+        const parsed = parseFrenchDateText(trimmed);
+        if (!parsed) {
+          document.getElementById("status").textContent =
+            "⚠️ Date invalide (format attendu : JJ/MM/AAAA) — non enregistrée.";
+          return;
+        }
+        valueToSend = dateToGristEpoch(parsed);
+        displayText = formatDateFR(parsed);
+      }
+    } else {
+      valueToSend = trimmed.length > 0 ? ["L", trimmed] : ["L"];
+    }
+
     await grist.selectedTable.update({ id: rowId, fields: { [colId]: valueToSend } });
     cellOriginalValues[`${rowId}_${colId}`] = valueToSend;
-    if (cellEl) cellEl.textContent = trimmed;
+    if (cellEl) cellEl.textContent = displayText;
   } catch (err) {
     console.error("Erreur d'écriture Grist (case date):", err);
     document.getElementById("status").textContent = "Erreur lors de l'enregistrement.";
