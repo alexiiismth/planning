@@ -230,6 +230,24 @@
     transform: translateY(1px);
   }
 
+  /* Boutons CSV / Excel : même gabarit que "Exporter en PDF", avec une
+     couleur distincte pour les différencier au premier coup d'œil. */
+  .export-csv-btn {
+    background: #16794f;
+  }
+
+  .export-csv-btn:hover {
+    background: #115d3c;
+  }
+
+  .export-excel-btn {
+    background: #1d6f42;
+  }
+
+  .export-excel-btn:hover {
+    background: #15532f;
+  }
+
   .info-btn {
     flex: 0 0 auto;
     width: 34px;
@@ -259,7 +277,9 @@
   .toolbar-actions {
     flex: 0 0 auto;
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
+    justify-content: flex-end;
     gap: 8px;
   }
 
@@ -478,6 +498,20 @@
        vraiment, car c'est la page entière qui défile) au lieu de la
        fenêtre — et donc ne resteraient jamais visibles. */
     overflow-y: visible;
+
+    /* Masque la barre de défilement NATIVE de ce conteneur (elle reste
+       fonctionnelle au clavier/trackpad/molette, seul son affichage
+       visuel est retiré) : on garde uniquement la barre "fantôme" collée
+       en bas de l'écran (.sticky-hscroll, toujours visible), pour éviter
+       d'avoir DEUX barres de défilement horizontales superposées quand on
+       arrive tout en bas du tableau. */
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* anciens Edge/IE */
+  }
+
+  .scroll-wrap::-webkit-scrollbar {
+    display: none; /* Chrome, Safari, Edge Chromium */
+    height: 0;
   }
 
   /* Table fusionnée utilisée UNIQUEMENT pour l'export PDF (voir
@@ -1350,6 +1384,12 @@
     </button>
     <button type="button" id="exportPdfBtn" class="export-pdf-btn" onclick="exportPlanningPDF()">
       📄 Exporter en PDF
+    </button>
+    <button type="button" id="exportCsvBtn" class="export-pdf-btn export-csv-btn" onclick="exportPlanningCSV()">
+      📋 Exporter en CSV
+    </button>
+    <button type="button" id="exportExcelBtn" class="export-pdf-btn export-excel-btn" onclick="exportPlanningExcel()">
+      📊 Exporter via Excel
     </button>
   </div>
 </div>
@@ -3358,6 +3398,29 @@ function computeFixedColWidthsPx(records, fixedKeys) {
   });
 }
 
+// Regroupe la logique (dupliquée jusqu'ici entre render() et
+// buildPrintTableHtml()) qui transforme les colonnes "days" mappées en
+// Grist en : la liste finale des colonnes de jours à afficher (une par
+// jour, weekends exclus, jours "fantômes" retirés, triées chronologiquement)
+// + leur regroupement par semaine ISO. Réutilisée aussi par les exports
+// CSV/Excel pour garantir exactement les mêmes colonnes que ce qui est
+// affiché à l'écran. Retourne null si aucune date n'a pu être déterminée.
+function computeDayKeysAndWeekGroups(records, mappings) {
+  if (!records || records.length === 0 || !mappings || !mappings.days) return null;
+  const sortedDayKeys = sortDayKeysByDate(records, mappings.days);
+  const dayKeysWithWeekends = trimPhantomTrailingDayColumns(records, sortedDayKeys);
+  const weekendDayKeys = computeWeekendKeySet(records, dayKeysWithWeekends);
+  const dayKeysWithMateriel = dayKeysWithWeekends.filter((key) => !weekendDayKeys.has(key));
+  const dayKeys = buildDayChunks(records, dayKeysWithMateriel).map((c) => c.keys[0]);
+
+  // weekKeyGroups peut être null si aucune date n'a pu être déterminée : on
+  // renvoie quand même "dayKeys" dans ce cas, car buildDateDiagnosticHtml()
+  // (diagnostic affiché à l'écran) en a besoin pour lister les colonnes
+  // problématiques.
+  const weekKeyGroups = computeWeekGroups(records, dayKeys);
+  return { dayKeys, weekKeyGroups };
+}
+
 // Génère le HTML complet du tableau fusionné utilisé pour l'export PDF.
 // Retourne null si les dates n'ont pas pu être déterminées (dans ce cas,
 // exportPlanningPDF() se rabat simplement sur l'impression normale de #app).
@@ -3365,14 +3428,9 @@ function buildPrintTableHtml(records, mappings) {
   if (!records || records.length === 0 || !mappings || !mappings.fixed || !mappings.days) return null;
 
   const fixedKeys = mappings.fixed;
-  const sortedDayKeys = sortDayKeysByDate(records, mappings.days);
-  const dayKeysWithWeekends = trimPhantomTrailingDayColumns(records, sortedDayKeys);
-  const weekendDayKeys = computeWeekendKeySet(records, dayKeysWithWeekends);
-  const dayKeysWithMateriel = dayKeysWithWeekends.filter((key) => !weekendDayKeys.has(key));
-  const dayKeys = buildDayChunks(records, dayKeysWithMateriel).map((c) => c.keys[0]);
-
-  const weekKeyGroups = computeWeekGroups(records, dayKeys);
-  if (!weekKeyGroups) return null;
+  const dayWeekInfo = computeDayKeysAndWeekGroups(records, mappings);
+  if (!dayWeekInfo || !dayWeekInfo.weekKeyGroups) return null;
+  const { dayKeys, weekKeyGroups } = dayWeekInfo;
 
   const chunks = buildDayChunksWithWeek(records, dayKeys, weekKeyGroups);
   const chunksByWeekIndex = {};
@@ -3463,18 +3521,13 @@ function render(records, mappings) {
   }
 
   const fixedKeys = mappings.fixed;
-  const sortedDayKeys = sortDayKeysByDate(records, mappings.days);
-  const dayKeysWithWeekends = trimPhantomTrailingDayColumns(records, sortedDayKeys);
-  const weekendDayKeys = computeWeekendKeySet(records, dayKeysWithWeekends);
-  const dayKeysWithMateriel = dayKeysWithWeekends.filter((key) => !weekendDayKeys.has(key));
-
   // Nouveau fonctionnement : on ne garde plus que les colonnes qui portent
   // effectivement une date (chaque jour = UNE seule colonne/case dans le
   // tableau). Les éventuelles colonnes "Travail/matériels" qui suivaient la
   // colonne de date ne sont plus prises en compte du tout.
-  const dayKeys = buildDayChunks(records, dayKeysWithMateriel).map((c) => c.keys[0]);
-
-  const weekKeyGroups = computeWeekGroups(records, dayKeys);
+  const dayWeekInfo = computeDayKeysAndWeekGroups(records, mappings);
+  const dayKeys = dayWeekInfo ? dayWeekInfo.dayKeys : [];
+  const weekKeyGroups = dayWeekInfo ? dayWeekInfo.weekKeyGroups : null;
   if (!weekKeyGroups) {
     appEl.innerHTML = buildDateDiagnosticHtml(records, dayKeys);
     if (appHeaderEl) appHeaderEl.innerHTML = "";
@@ -4516,6 +4569,236 @@ document.addEventListener("keydown", (e) => {
     }
   }
 });
+
+// ============================================================
+// EXPORT CSV / EXCEL — même contenu que ce qui est affiché à l'écran
+// (texte lisible des cases + couleurs pour Excel), jamais les valeurs
+// Grist brutes (JSON interne des cases divisibles, ChoiceList, etc.) que
+// l'on verrait en ouvrant directement la table Grist "derrière" ce widget.
+// ============================================================
+
+// Texte lisible d'une case "employé" d'un jour donné, à partir de sa
+// valeur brute Grist — même découpage que renderSplitCellContent (voir
+// plus bas), mais en texte simple : une partie par activité, sous la
+// forme "Activité: texte" (ou juste l'un des deux si l'autre est vide),
+// plusieurs parties séparées par " / ".
+function getDisplayCellText(rawValue) {
+  const parts = parseCellParts(rawValue);
+  return parts
+    .map((p) => {
+      const text = String(p.text || "").replace(/\r\n|\r|\n/g, " ").trim();
+      const choice = String(p.choice || "").trim();
+      if (choice && text) return `${choice}: ${text}`;
+      return choice || text;
+    })
+    .filter((s) => s.length > 0)
+    .join(" / ");
+}
+
+// Couleur de fond à utiliser pour une case dans l'export Excel : celle de
+// la PREMIÈRE partie qui a une activité choisie. Une cellule de tableur ne
+// peut avoir qu'une seule couleur de fond, contrairement à l'écran où
+// chaque partie d'une case divisée a sa propre bande colorée empilée — en
+// cas de case à plusieurs activités, seule la couleur de la première est
+// donc reprise (le texte, lui, liste bien toutes les parties).
+function getDisplayCellColor(rawValue) {
+  const parts = parseCellParts(rawValue);
+  for (let i = 0; i < parts.length; i++) {
+    if (parts[i].choice && CHOICE_COLORS[parts[i].choice]) return CHOICE_COLORS[parts[i].choice];
+  }
+  return null;
+}
+
+// Date affichée pour la ligne des dates (1re ligne gelée), à partir de sa
+// valeur brute — gère aussi bien les vraies colonnes Date/DateTime Grist
+// que les colonnes Texte/ChoiceList "JJ/MM/AAAA" (voir parseFrenchDateFromValue).
+function getDisplayDateText(rawValue, key) {
+  if (isDateLikeColumnType(columnTypesCache[key])) {
+    const d = parseFrenchDateFromValue(rawValue, key);
+    return d ? formatDateFR(d) : "";
+  }
+  const items = extractChoiceItems(rawValue);
+  return items.length ? items.join(", ") : String(rawValue ?? "");
+}
+
+// Nom de fichier téléchargé, basé sur le titre de la page (ex: "Planning
+// Août 2026 - Widget Grist" -> "Planning Août 2026"), nettoyé des
+// caractères interdits dans un nom de fichier Windows/Mac.
+function buildExportFileBaseName() {
+  const raw = (document.title || "Planning").replace(/\s*-\s*Widget Grist\s*$/i, "");
+  const cleaned = raw.replace(/[\\/:*?"<>|]+/g, "_").trim();
+  return cleaned.length > 0 ? cleaned : "Planning";
+}
+
+function triggerFileDownload(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// Échappe un champ pour un fichier CSV utilisant ";" comme séparateur (le
+// séparateur attendu par Excel en français, où "," sert de séparateur
+// décimal) : double les guillemets internes, et entoure le champ de
+// guillemets s'il contient le séparateur, un guillemet ou un retour ligne.
+function csvEscapeField(value) {
+  const text = String(value ?? "");
+  if (/[";\n\r]/.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+  return text;
+}
+
+function exportPlanningCSV() {
+  if (!lastRecords || !lastMappings || !lastMappings.fixed || !lastMappings.days) return;
+  const records = lastRecords;
+  const mappings = lastMappings;
+  const fixedKeys = mappings.fixed;
+
+  const dayWeekInfo = computeDayKeysAndWeekGroups(records, mappings);
+  if (!dayWeekInfo || !dayWeekInfo.weekKeyGroups) {
+    document.getElementById("status").textContent =
+      "⚠️ Export impossible : les dates du planning n'ont pas pu être déterminées.";
+    return;
+  }
+  const { weekKeyGroups } = dayWeekInfo;
+
+  const firstRecord = FREEZE_FIRST_ROW_AS_DATE ? records[0] : null;
+  const bodyRecords = FREEZE_FIRST_ROW_AS_DATE ? records.slice(1) : records;
+
+  const rows = [];
+
+  // Ligne 1 : "Employé" puis "Semaine X" par semaine — un seul libellé au
+  // début de chaque groupe de colonnes, cases suivantes vides, pour
+  // reproduire la fusion visuelle des en-têtes à l'écran.
+  const weekRow = fixedKeys.map((_, i) => (i === 0 ? FIXED_MERGED_LABEL : ""));
+  weekKeyGroups.forEach((group) => {
+    group.keys.forEach((_, i) => weekRow.push(i === 0 ? group.label : ""));
+  });
+  rows.push(weekRow);
+
+  // Ligne 2 : la ligne des dates (JJ/MM/AAAA par colonne de jour).
+  const dateRow = fixedKeys.map(() => "");
+  weekKeyGroups.forEach((group) => {
+    group.keys.forEach((key) => {
+      dateRow.push(firstRecord ? getDisplayDateText(firstRecord[key], key) : "");
+    });
+  });
+  rows.push(dateRow);
+
+  // Lignes suivantes : une par employé, texte lisible de chaque case.
+  bodyRecords.forEach((record) => {
+    const row = fixedKeys.map((key) => String(record[key] ?? ""));
+    weekKeyGroups.forEach((group) => {
+      group.keys.forEach((key) => {
+        row.push(getDisplayCellText(record[key]));
+      });
+    });
+    rows.push(row);
+  });
+
+  const csvBody = rows.map((row) => row.map(csvEscapeField).join(";")).join("\r\n");
+  // Le BOM UTF-8 en tête du fichier est nécessaire pour qu'Excel affiche
+  // correctement les accents à l'ouverture directe du .csv (sans lui, il
+  // devine souvent une mauvaise page de code et affiche des caractères
+  // corrompus).
+  const blob = new Blob(["\uFEFF" + csvBody], { type: "text/csv;charset=utf-8;" });
+  triggerFileDownload(blob, `${buildExportFileBaseName()}.csv`);
+}
+
+// Construit le tableau HTML (styles inline reprenant exactement les
+// couleurs et fusions de l'écran) utilisé pour l'export Excel. Un fichier
+// ".xls" contenant en réalité du HTML est une astuce standard et fiable :
+// Excel l'ouvre nativement avec ses couleurs, fusions de cellules et
+// bordures, sans dépendre d'aucune bibliothèque externe.
+function buildExcelTableHtml(records, mappings) {
+  const fixedKeys = mappings.fixed;
+  const dayWeekInfo = computeDayKeysAndWeekGroups(records, mappings);
+  if (!dayWeekInfo || !dayWeekInfo.weekKeyGroups) return null;
+  const { weekKeyGroups } = dayWeekInfo;
+
+  const firstRecord = FREEZE_FIRST_ROW_AS_DATE ? records[0] : null;
+  const bodyRecords = FREEZE_FIRST_ROW_AS_DATE ? records.slice(1) : records;
+
+  const CELL_BASE =
+    "border:1px solid #000000;padding:4px 6px;font-family:Calibri,Arial,sans-serif;font-size:11px;vertical-align:top;";
+
+  let html = '<table style="border-collapse:collapse;">';
+
+  // ---- En-têtes ("Employé" + "Semaine X") ----
+  html += "<tr>";
+  html += `<td colspan="${fixedKeys.length}" style="${CELL_BASE}background:#1a252f;color:#ffffff;text-align:center;font-weight:bold;">${escapeHtml(FIXED_MERGED_LABEL)}</td>`;
+  weekKeyGroups.forEach((group) => {
+    html += `<td colspan="${group.keys.length}" style="${CELL_BASE}background:#34495e;color:#ffffff;text-align:center;font-weight:bold;">${escapeHtml(group.label)}</td>`;
+  });
+  html += "</tr>";
+
+  // ---- Ligne des dates ----
+  html += "<tr>";
+  fixedKeys.forEach(() => {
+    html += `<td style="${CELL_BASE}background:#ffffff;"></td>`;
+  });
+  weekKeyGroups.forEach((group) => {
+    group.keys.forEach((key) => {
+      const dateText = firstRecord ? getDisplayDateText(firstRecord[key], key) : "";
+      html += `<td style="${CELL_BASE}background:#f0f0f0;color:#333333;text-align:center;font-weight:bold;">${escapeHtml(dateText)}</td>`;
+    });
+  });
+  html += "</tr>";
+
+  // ---- Une ligne par employé ----
+  bodyRecords.forEach((record) => {
+    html += "<tr>";
+    fixedKeys.forEach((key, i) => {
+      const plainText = String(record[key] ?? "");
+      const highlight = i === 0 && plainText.includes(MATERIEL_KEYWORD);
+      const bg = highlight ? "#d8b4fe" : "#ffffff";
+      html += `<td style="${CELL_BASE}background:${bg};color:#333333;">${escapeHtml(plainText)}</td>`;
+    });
+    weekKeyGroups.forEach((group) => {
+      group.keys.forEach((key) => {
+        const rawValue = record[key];
+        const color = getDisplayCellColor(rawValue);
+        const bg = color ? color.bg : "#ffffff";
+        const textColor = color ? color.text : "#333333";
+        const text = getDisplayCellText(rawValue);
+        html += `<td style="${CELL_BASE}background:${bg};color:${textColor};white-space:pre-wrap;">${escapeHtml(text)}</td>`;
+      });
+    });
+    html += "</tr>";
+  });
+
+  html += "</table>";
+  return html;
+}
+
+function exportPlanningExcel() {
+  if (!lastRecords || !lastMappings || !lastMappings.fixed || !lastMappings.days) return;
+
+  const tableHtml = buildExcelTableHtml(lastRecords, lastMappings);
+  if (!tableHtml) {
+    document.getElementById("status").textContent =
+      "⚠️ Export impossible : les dates du planning n'ont pas pu être déterminées.";
+    return;
+  }
+
+  const fullHtml =
+    '<html xmlns:o="urn:schemas-microsoft-com:office:office" ' +
+    'xmlns:x="urn:schemas-microsoft-com:office:excel" ' +
+    'xmlns="http://www.w3.org/TR/REC-html40">' +
+    '<head><meta charset="UTF-8">' +
+    "<!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet>" +
+    "<x:Name>Planning</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions>" +
+    "</x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->" +
+    "</head><body>" + tableHtml + "</body></html>";
+
+  const blob = new Blob([fullHtml], { type: "application/vnd.ms-excel;charset=utf-8;" });
+  triggerFileDownload(blob, `${buildExportFileBaseName()}.xls`);
+}
 
 // ============================================================
 // EXPORT DU PLANNING EN PDF
