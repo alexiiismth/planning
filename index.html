@@ -6,7 +6,7 @@
 <title>Planning Août 2026 - Widget Grist</title>
 <script>
   // ============================================================
-  // GARDE-FOU : affiche toujours un  message lisible en cas de
+  // GARDE-FOU : affiche toujours un message lisible en cas de
   // problème, au lieu de laisser la page blanche sans explication.
   // ============================================================
   function showFatalError(title, detail) {
@@ -52,6 +52,16 @@
 <script
   src="https://docs.getgrist.com/grist-plugin-api.js"
   onerror="showFatalError('Impossible de charger grist-plugin-api.js (CDN injoignable).', 'Vérifie ta connexion internet ou si docs.getgrist.com est bloqué par le réseau/pare-feu.');"
+></script>
+<!-- Bibliothèque utilisée uniquement pour l'export Excel (.xlsx) : permet de
+     générer un vrai classeur Excel avec fusions de cellules et couleurs de
+     fond, pour que le fichier exporté ressemble fidèlement au planning
+     affiché à l'écran (voir exportPlanningExcel / buildExcelWorkbook). Le
+     bouton d'export affiche un message clair si ce script n'a pas pu se
+     charger (voir la vérification "typeof ExcelJS" dans exportPlanningExcel). -->
+<script
+  src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"
+  onerror="showFatalError('Impossible de charger ExcelJS (CDN injoignable).', 'L\'export Excel ne fonctionnera pas tant que ce script n\'est pas chargé. Vérifie ta connexion internet ou si cdn.jsdelivr.net est bloqué par le réseau/pare-feu.');"
 ></script>
 <style>
   /* Empêche les navigateurs (Chrome, Firefox, etc.) d'appliquer leur
@@ -4602,20 +4612,6 @@ function getDisplayCellText(rawValue) {
     .join(" / ");
 }
 
-// Couleur de fond à utiliser pour une case dans l'export Excel : celle de
-// la PREMIÈRE partie qui a une activité choisie. Une cellule de tableur ne
-// peut avoir qu'une seule couleur de fond, contrairement à l'écran où
-// chaque partie d'une case divisée a sa propre bande colorée empilée — en
-// cas de case à plusieurs activités, seule la couleur de la première est
-// donc reprise (le texte, lui, liste bien toutes les parties).
-function getDisplayCellColor(rawValue) {
-  const parts = parseCellParts(rawValue);
-  for (let i = 0; i < parts.length; i++) {
-    if (parts[i].choice && CHOICE_COLORS[parts[i].choice]) return CHOICE_COLORS[parts[i].choice];
-  }
-  return null;
-}
-
 // Date affichée pour la ligne des dates (1re ligne gelée), à partir de sa
 // valeur brute — gère aussi bien les vraies colonnes Date/DateTime Grist
 // que les colonnes Texte/ChoiceList "JJ/MM/AAAA" (voir parseFrenchDateFromValue).
@@ -4717,12 +4713,46 @@ function exportPlanningCSV() {
   triggerFileDownload(blob, `${buildExportFileBaseName()}.csv`);
 }
 
-// Construit le tableau HTML (styles inline reprenant exactement les
-// couleurs et fusions de l'écran) utilisé pour l'export Excel. Un fichier
-// ".xls" contenant en réalité du HTML est une astuce standard et fiable :
-// Excel l'ouvre nativement avec ses couleurs, fusions de cellules et
-// bordures, sans dépendre d'aucune bibliothèque externe.
-function buildExcelTableHtml(records, mappings) {
+// Découpage d'une case en parties "affichables" pour l'export Excel :
+// contrairement à getDisplayCellText (qui aplatit tout en une seule ligne de
+// texte séparée par " / ", utilisée pour le CSV), on garde ici CHAQUE partie
+// séparée avec sa propre couleur, pour reconstruire dans Excel les bandes
+// empilées que l'on voit à l'écran (voir renderSplitCellContent).
+function getDisplayCellParts(rawValue) {
+  const parts = parseCellParts(rawValue);
+  return parts.map((p) => {
+    const text = String(p.text || "").replace(/\r\n|\r|\n/g, " ").trim();
+    const choice = String(p.choice || "").trim();
+    const label = choice && text ? `${choice}: ${text}` : (choice || text);
+    return { choice, label };
+  });
+}
+
+// Convertit une couleur "#rrggbb" (format utilisé par CHOICE_COLORS, pensé
+// pour le CSS de l'écran) en couleur ARGB "FFrrggbb" attendue par ExcelJS.
+function hexToArgb(hex) {
+  const clean = String(hex || "").replace("#", "").toUpperCase();
+  if (clean.length === 6) return "FF" + clean;
+  if (clean.length === 8) return clean;
+  return "FF000000";
+}
+
+// Construit un VRAI classeur Excel (.xlsx, via la bibliothèque ExcelJS)
+// avec de vraies fusions de cellules et couleurs de fond, pour que le
+// fichier exporté ressemble fidèlement au planning affiché à l'écran —
+// contrairement à l'ancienne version (un tableau HTML déguisé en ".xls"),
+// une case Excel ne peut pas afficher plusieurs bandes de couleur
+// empilées : chaque activité d'une case avec plusieurs activités devient
+// donc une VRAIE sous-ligne Excel à elle, avec sa propre couleur. Si une
+// case a moins d'activités que la case la plus remplie de la même ligne
+// (le plus grand nombre d'activités parmi tous les jours de cet employé),
+// sa DERNIÈRE activité est fusionnée verticalement pour occuper tout
+// l'espace restant — exactement comme, à l'écran, la bande CSS
+// (.split-part, flex-grow) s'étire pour remplir toute la hauteur de la
+// case quand la ligne est agrandie par un collègue ayant plus d'activités
+// ce jour-là. Les colonnes "Employé" (Nom/Prénom) sont, elles, fusionnées
+// sur toute la hauteur du bloc de l'employé.
+async function buildExcelWorkbook(records, mappings) {
   const fixedKeys = mappings.fixed;
   const dayWeekInfo = computeDayKeysAndWeekGroups(records, mappings);
   if (!dayWeekInfo || !dayWeekInfo.weekKeyGroups) return null;
@@ -4731,80 +4761,157 @@ function buildExcelTableHtml(records, mappings) {
   const firstRecord = FREEZE_FIRST_ROW_AS_DATE ? records[0] : null;
   const bodyRecords = FREEZE_FIRST_ROW_AS_DATE ? records.slice(1) : records;
 
-  const CELL_BASE =
-    "border:1px solid #000000;padding:4px 6px;font-family:Calibri,Arial,sans-serif;font-size:11px;vertical-align:top;";
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Planning");
 
-  let html = '<table style="border-collapse:collapse;">';
+  const totalCols = fixedKeys.length + weekKeyGroups.reduce((a, g) => a + g.keys.length, 0);
 
-  // ---- En-têtes ("Employé" + "Semaine X") ----
-  html += "<tr>";
-  html += `<td colspan="${fixedKeys.length}" style="${CELL_BASE}background:#1a252f;color:#ffffff;text-align:center;font-weight:bold;">${escapeHtml(FIXED_MERGED_LABEL)}</td>`;
-  weekKeyGroups.forEach((group) => {
-    html += `<td colspan="${group.keys.length}" style="${CELL_BASE}background:#34495e;color:#ffffff;text-align:center;font-weight:bold;">${escapeHtml(group.label)}</td>`;
+  // Largeurs de colonnes reprises des variables CSS de l'écran
+  // (--col1-width / --col2-width / --day-width), converties en unités de
+  // largeur Excel (approximation standard : pixels / 7).
+  fixedKeys.forEach((_, i) => {
+    ws.getColumn(i + 1).width = (i === 0 ? 92 : 186) / 7;
   });
-  html += "</tr>";
+  for (let c = fixedKeys.length + 1; c <= totalCols; c++) ws.getColumn(c).width = 111 / 7;
+
+  const THIN = { style: "thin", color: { argb: "FF000000" } };
+  const BORDER_ALL = { top: THIN, left: THIN, bottom: THIN, right: THIN };
+  const applyBorder = (cell) => { cell.border = BORDER_ALL; };
+
+  // ---- Ligne d'en-tête ("Employé" + "Semaine X"), fusionnée comme à l'écran ----
+  ws.mergeCells(1, 1, 1, fixedKeys.length);
+  const headCell = ws.getCell(1, 1);
+  headCell.value = FIXED_MERGED_LABEL;
+  headCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1A252F" } };
+  headCell.font = { color: { argb: "FFFFFFFF" }, bold: true };
+  headCell.alignment = { horizontal: "center", vertical: "middle" };
+  for (let c = 1; c <= fixedKeys.length; c++) applyBorder(ws.getCell(1, c));
+
+  let colCursor = fixedKeys.length + 1;
+  weekKeyGroups.forEach((group) => {
+    const startCol = colCursor;
+    const endCol = colCursor + group.keys.length - 1;
+    if (endCol > startCol) ws.mergeCells(1, startCol, 1, endCol);
+    const c = ws.getCell(1, startCol);
+    c.value = group.label;
+    c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF34495E" } };
+    c.font = { color: { argb: "FFFFFFFF" }, bold: true };
+    c.alignment = { horizontal: "center", vertical: "middle" };
+    for (let cc = startCol; cc <= endCol; cc++) applyBorder(ws.getCell(1, cc));
+    colCursor = endCol + 1;
+  });
 
   // ---- Ligne des dates ----
-  html += "<tr>";
-  fixedKeys.forEach(() => {
-    html += `<td style="${CELL_BASE}background:#ffffff;"></td>`;
-  });
+  const dateRowIdx = 2;
+  fixedKeys.forEach((_, i) => applyBorder(ws.getCell(dateRowIdx, i + 1)));
+  colCursor = fixedKeys.length + 1;
   weekKeyGroups.forEach((group) => {
     group.keys.forEach((key) => {
-      const dateText = firstRecord ? getDisplayDateText(firstRecord[key], key) : "";
-      html += `<td style="${CELL_BASE}background:#f0f0f0;color:#333333;text-align:center;font-weight:bold;">${escapeHtml(dateText)}</td>`;
+      const c = ws.getCell(dateRowIdx, colCursor);
+      c.value = firstRecord ? getDisplayDateText(firstRecord[key], key) : "";
+      c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF0F0F0" } };
+      c.font = { bold: true };
+      c.alignment = { horizontal: "center" };
+      applyBorder(c);
+      colCursor++;
     });
   });
-  html += "</tr>";
 
-  // ---- Une ligne par employé ----
+  // ---- Une "ligne employé" (une ou plusieurs sous-lignes Excel) ----
+  const SUBROW_HEIGHT = 24; // points, hauteur d'une bande d'activité
+  const dayKeysFlat = weekKeyGroups.flatMap((g) => g.keys);
+  let currentRow = dateRowIdx + 1;
+
   bodyRecords.forEach((record) => {
-    html += "<tr>";
+    // Nombre d'activités par case de cette ligne, pour connaître la
+    // hauteur du bloc (le plus grand nombre d'activités parmi tous les
+    // jours de cet employé), comme la ligne s'agrandit à l'écran.
+    const partsByKey = {};
+    let maxN = 1;
+    dayKeysFlat.forEach((key) => {
+      const parts = getDisplayCellParts(record[key]);
+      partsByKey[key] = parts;
+      maxN = Math.max(maxN, parts.length);
+    });
+
+    for (let r = 0; r < maxN; r++) ws.getRow(currentRow + r).height = SUBROW_HEIGHT;
+
+    // Colonnes fixes (Nom/Prénom...) : fusionnées sur toute la hauteur du bloc.
     fixedKeys.forEach((key, i) => {
       const plainText = String(record[key] ?? "");
       const highlight = i === 0 && plainText.includes(MATERIEL_KEYWORD);
-      const bg = highlight ? "#d8b4fe" : "#ffffff";
-      html += `<td style="${CELL_BASE}background:${bg};color:#333333;">${escapeHtml(plainText)}</td>`;
+      const cell = ws.getCell(currentRow, i + 1);
+      cell.value = plainText;
+      cell.alignment = { vertical: "top", wrapText: true };
+      if (maxN > 1) ws.mergeCells(currentRow, i + 1, currentRow + maxN - 1, i + 1);
+      for (let r = 0; r < maxN; r++) {
+        const bc = ws.getCell(currentRow + r, i + 1);
+        applyBorder(bc);
+        if (highlight) bc.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD8B4FE" } };
+      }
     });
+
+    // Colonnes jours : une sous-ligne par activité, la dernière étirée
+    // (fusionnée) pour occuper l'espace restant si cette case a moins
+    // d'activités que la plus remplie de la ligne.
+    colCursor = fixedKeys.length + 1;
     weekKeyGroups.forEach((group) => {
       group.keys.forEach((key) => {
-        const rawValue = record[key];
-        const color = getDisplayCellColor(rawValue);
-        const bg = color ? color.bg : "#ffffff";
-        const textColor = color ? color.text : "#333333";
-        const text = getDisplayCellText(rawValue);
-        html += `<td style="${CELL_BASE}background:${bg};color:${textColor};white-space:pre-wrap;">${escapeHtml(text)}</td>`;
+        const parts = partsByKey[key];
+        const n = parts.length;
+        parts.forEach((p, i) => {
+          const rowIdx = currentRow + i;
+          const isLast = i === n - 1;
+          const span = isLast ? maxN - i : 1;
+          const color = p.choice ? CHOICE_COLORS[p.choice] : null;
+          const cell = ws.getCell(rowIdx, colCursor);
+          cell.value = p.label;
+          cell.alignment = { vertical: "top", wrapText: true };
+          if (color) {
+            cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: hexToArgb(color.bg) } };
+            cell.font = { color: { argb: hexToArgb(color.text) } };
+          }
+          if (span > 1) ws.mergeCells(rowIdx, colCursor, rowIdx + span - 1, colCursor);
+        });
+        for (let r = 0; r < maxN; r++) applyBorder(ws.getCell(currentRow + r, colCursor));
+        colCursor++;
       });
     });
-    html += "</tr>";
+
+    currentRow += maxN;
   });
 
-  html += "</table>";
-  return html;
+  // Fige la même zone qu'à l'écran (colonnes Employé + en-têtes).
+  ws.views = [{ state: "frozen", xSplit: fixedKeys.length, ySplit: dateRowIdx }];
+
+  return wb;
 }
 
-function exportPlanningExcel() {
+async function exportPlanningExcel() {
   if (!lastRecords || !lastMappings || !lastMappings.fixed || !lastMappings.days) return;
 
-  const tableHtml = buildExcelTableHtml(lastRecords, lastMappings);
-  if (!tableHtml) {
+  if (typeof ExcelJS === "undefined") {
     document.getElementById("status").textContent =
-      "⚠️ Export impossible : les dates du planning n'ont pas pu être déterminées.";
+      "⚠️ Export impossible : la bibliothèque Excel (ExcelJS) n'a pas pu être chargée. Vérifie ta connexion internet.";
     return;
   }
 
-  const fullHtml =
-    '<html xmlns:o="urn:schemas-microsoft-com:office:office" ' +
-    'xmlns:x="urn:schemas-microsoft-com:office:excel" ' +
-    'xmlns="http://www.w3.org/TR/REC-html40">' +
-    '<head><meta charset="UTF-8">' +
-    "<!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet>" +
-    "<x:Name>Planning</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions>" +
-    "</x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->" +
-    "</head><body>" + tableHtml + "</body></html>";
-
-  const blob = new Blob([fullHtml], { type: "application/vnd.ms-excel;charset=utf-8;" });
-  triggerFileDownload(blob, `${buildExportFileBaseName()}.xls`);
+  try {
+    const wb = await buildExcelWorkbook(lastRecords, lastMappings);
+    if (!wb) {
+      document.getElementById("status").textContent =
+        "⚠️ Export impossible : les dates du planning n'ont pas pu être déterminées.";
+      return;
+    }
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    triggerFileDownload(blob, `${buildExportFileBaseName()}.xlsx`);
+  } catch (e) {
+    document.getElementById("status").textContent =
+      "⚠️ Erreur lors de la génération du fichier Excel : " + (e && e.message ? e.message : e);
+  }
 }
 
 // ============================================================
