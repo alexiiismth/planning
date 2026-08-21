@@ -4819,6 +4819,27 @@ async function buildExcelWorkbook(records, mappings) {
   const BORDER_ALL = { top: THIN, left: THIN, bottom: THIN, right: THIN };
   const applyBorder = (cell) => { cell.border = BORDER_ALL; };
 
+  // Bordure épaisse et bien noire utilisée pour marquer la séparation
+  // entre deux semaines dans le fichier Excel exporté (même logique que
+  // la classe CSS "week-start" à l'écran : bordure gauche renforcée sur
+  // la première colonne de chaque semaine, sauf la toute première).
+  const THICK_SEPARATOR = { style: "thick", color: { argb: "FF000000" } };
+  // Colonnes (1-indexées) où commence chaque semaine, en excluant la
+  // première semaine (déjà délimitée par les colonnes fixes "Employé").
+  const weekStartCols = [];
+  {
+    let cc = fixedKeys.length + 1;
+    weekKeyGroups.forEach((group, idx) => {
+      if (idx > 0) weekStartCols.push(cc);
+      cc += group.keys.length;
+    });
+  }
+  const applyWeekSeparators = (cell) => {
+    if (weekStartCols.includes(cell.col)) {
+      cell.border = Object.assign({}, cell.border, { left: THICK_SEPARATOR });
+    }
+  };
+
   // ---- Ligne d'en-tête ("Employé" + "Semaine X"), fusionnée comme à l'écran ----
   ws.mergeCells(1, 1, 1, fixedKeys.length);
   const headCell = ws.getCell(1, 1);
@@ -4839,6 +4860,7 @@ async function buildExcelWorkbook(records, mappings) {
     c.font = { color: { argb: "FFFFFFFF" }, bold: true };
     c.alignment = { horizontal: "center", vertical: "middle" };
     for (let cc = startCol; cc <= endCol; cc++) applyBorder(ws.getCell(1, cc));
+    applyWeekSeparators(ws.getCell(1, startCol));
     colCursor = endCol + 1;
   });
 
@@ -4854,6 +4876,7 @@ async function buildExcelWorkbook(records, mappings) {
       c.font = { bold: true };
       c.alignment = { horizontal: "center" };
       applyBorder(c);
+      applyWeekSeparators(c);
       colCursor++;
     });
   });
@@ -4932,7 +4955,10 @@ async function buildExcelWorkbook(records, mappings) {
           if (span > 1) ws.mergeCells(rowIdx, colCursor, rowIdx + span - 1, colCursor);
           contributeRowHeight(rowHeights, i, span, p.text, DAY_WIDTH_CHARS);
         });
-        for (let r = 0; r < maxN; r++) applyBorder(ws.getCell(currentRow + r, colCursor));
+        for (let r = 0; r < maxN; r++) {
+          applyBorder(ws.getCell(currentRow + r, colCursor));
+          applyWeekSeparators(ws.getCell(currentRow + r, colCursor));
+        }
         colCursor++;
       });
     });
