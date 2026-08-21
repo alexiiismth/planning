@@ -6,7 +6,7 @@
 <title>Planning Août 2026 - Widget Grist</title>
 <script>
   // ============================================================
-  // GARDE-FOU : affiche toujours un message lisible en cas de
+  // GARDE-FOU : affiche toujours un  message lisible en cas de
   // problème, au lieu de laisser la page blanche sans explication.
   // ============================================================
   function showFatalError(title, detail) {
@@ -4717,14 +4717,16 @@ function exportPlanningCSV() {
 // contrairement à getDisplayCellText (qui aplatit tout en une seule ligne de
 // texte séparée par " / ", utilisée pour le CSV), on garde ici CHAQUE partie
 // séparée avec sa propre couleur, pour reconstruire dans Excel les bandes
-// empilées que l'on voit à l'écran (voir renderSplitCellContent).
+// empilées que l'on voit à l'écran (voir renderSplitCellContent). Le nom de
+// l'activité n'est PAS inclus dans le texte affiché : la couleur de la bande
+// suffit à l'identifier (exactement comme à l'écran), seul le texte libre
+// éventuel de la partie est affiché.
 function getDisplayCellParts(rawValue) {
   const parts = parseCellParts(rawValue);
   return parts.map((p) => {
     const text = String(p.text || "").replace(/\r\n|\r|\n/g, " ").trim();
     const choice = String(p.choice || "").trim();
-    const label = choice && text ? `${choice}: ${text}` : (choice || text);
-    return { choice, label };
+    return { choice, text };
   });
 }
 
@@ -4735,6 +4737,39 @@ function hexToArgb(hex) {
   if (clean.length === 6) return "FF" + clean;
   if (clean.length === 8) return clean;
   return "FF000000";
+}
+
+// Estime le nombre de lignes que prendra un texte une fois affiché avec
+// retour à la ligne automatique (wrapText) dans une colonne de largeur
+// donnée (exprimée en "caractères", l'unité de largeur de colonne Excel).
+// ExcelJS ne calcule pas lui-même la hauteur de ligne nécessaire (contrairement
+// à Excel ouvert manuellement, qui ne le fait que sur demande de l'utilisateur) :
+// on doit donc la calculer nous-mêmes pour ajuster automatiquement la hauteur
+// des lignes, plutôt que de laisser une hauteur fixe qui tronque le texte.
+function estimateWrappedLineCount(text, colWidthChars) {
+  const clean = String(text || "").trim();
+  if (!clean) return 0;
+  // Calibrage empirique (vérifié par rendu visuel réel, voir tests) : la
+  // largeur de colonne Excel (unité "caractères", basée sur le "0" de la
+  // police par défaut) correspond à peu près au nombre de caractères
+  // réellement affichables sur une ligne avec Calibri 11 — inutile de la
+  // multiplier, une police proportionnelle n'y gagne pas la marge qu'on
+  // pourrait attendre du chiffre "0", plus large que la moyenne des lettres,
+  // mais aussi de la place perdue par le padding interne de la cellule.
+  const charsPerLine = Math.max(4, Math.floor(colWidthChars));
+  const words = clean.split(/\s+/).filter(Boolean);
+  let lines = 1;
+  let lineLen = 0;
+  words.forEach((w) => {
+    const wLen = w.length + (lineLen > 0 ? 1 : 0);
+    if (lineLen + wLen > charsPerLine && lineLen > 0) {
+      lines++;
+      lineLen = w.length;
+    } else {
+      lineLen += wLen;
+    }
+  });
+  return lines;
 }
 
 // Construit un VRAI classeur Excel (.xlsx, via la bibliothèque ExcelJS)
@@ -4751,7 +4786,10 @@ function hexToArgb(hex) {
 // (.split-part, flex-grow) s'étire pour remplir toute la hauteur de la
 // case quand la ligne est agrandie par un collègue ayant plus d'activités
 // ce jour-là. Les colonnes "Employé" (Nom/Prénom) sont, elles, fusionnées
-// sur toute la hauteur du bloc de l'employé.
+// sur toute la hauteur du bloc de l'employé. La hauteur de chaque sous-ligne
+// est calculée automatiquement à partir du texte le plus long qu'elle doit
+// afficher, pour que tout le texte soit visible sans avoir à élargir les
+// lignes à la main.
 async function buildExcelWorkbook(records, mappings) {
   const fixedKeys = mappings.fixed;
   const dayWeekInfo = computeDayKeysAndWeekGroups(records, mappings);
@@ -4769,10 +4807,13 @@ async function buildExcelWorkbook(records, mappings) {
   // Largeurs de colonnes reprises des variables CSS de l'écran
   // (--col1-width / --col2-width / --day-width), converties en unités de
   // largeur Excel (approximation standard : pixels / 7).
+  const COL1_WIDTH_CHARS = 92 / 7;
+  const COL2_WIDTH_CHARS = 186 / 7;
+  const DAY_WIDTH_CHARS = 111 / 7;
   fixedKeys.forEach((_, i) => {
-    ws.getColumn(i + 1).width = (i === 0 ? 92 : 186) / 7;
+    ws.getColumn(i + 1).width = i === 0 ? COL1_WIDTH_CHARS : COL2_WIDTH_CHARS;
   });
-  for (let c = fixedKeys.length + 1; c <= totalCols; c++) ws.getColumn(c).width = 111 / 7;
+  for (let c = fixedKeys.length + 1; c <= totalCols; c++) ws.getColumn(c).width = DAY_WIDTH_CHARS;
 
   const THIN = { style: "thin", color: { argb: "FF000000" } };
   const BORDER_ALL = { top: THIN, left: THIN, bottom: THIN, right: THIN };
@@ -4818,9 +4859,25 @@ async function buildExcelWorkbook(records, mappings) {
   });
 
   // ---- Une "ligne employé" (une ou plusieurs sous-lignes Excel) ----
-  const SUBROW_HEIGHT = 24; // points, hauteur d'une bande d'activité
+  const LINE_HEIGHT_PT = 14; // hauteur approximative d'une ligne de texte (Calibri 11)
+  const MIN_ROW_HEIGHT_PT = 18; // hauteur minimale d'une sous-ligne, même sans texte
+  const CELL_VPADDING_PT = 4; // marge haut+bas approximative dans la case
   const dayKeysFlat = weekKeyGroups.flatMap((g) => g.keys);
   let currentRow = dateRowIdx + 1;
+
+  // Ajoute la contribution d'un texte (dans une colonne de largeur
+  // colWidthChars) à la hauteur requise des sous-lignes qu'il occupe
+  // (de startIdx à startIdx+span-1, indices relatifs au bloc employé),
+  // en répartissant sa hauteur totale nécessaire sur toutes ces sous-lignes.
+  function contributeRowHeight(rowHeights, startIdx, span, text, colWidthChars) {
+    const lines = estimateWrappedLineCount(text, colWidthChars);
+    if (lines === 0) return;
+    const totalNeeded = lines * LINE_HEIGHT_PT + CELL_VPADDING_PT;
+    const perRow = totalNeeded / span;
+    for (let r = 0; r < span; r++) {
+      rowHeights[startIdx + r] = Math.max(rowHeights[startIdx + r], perRow);
+    }
+  }
 
   bodyRecords.forEach((record) => {
     // Nombre d'activités par case de cette ligne, pour connaître la
@@ -4834,7 +4891,7 @@ async function buildExcelWorkbook(records, mappings) {
       maxN = Math.max(maxN, parts.length);
     });
 
-    for (let r = 0; r < maxN; r++) ws.getRow(currentRow + r).height = SUBROW_HEIGHT;
+    const rowHeights = new Array(maxN).fill(MIN_ROW_HEIGHT_PT);
 
     // Colonnes fixes (Nom/Prénom...) : fusionnées sur toute la hauteur du bloc.
     fixedKeys.forEach((key, i) => {
@@ -4844,6 +4901,7 @@ async function buildExcelWorkbook(records, mappings) {
       cell.value = plainText;
       cell.alignment = { vertical: "top", wrapText: true };
       if (maxN > 1) ws.mergeCells(currentRow, i + 1, currentRow + maxN - 1, i + 1);
+      contributeRowHeight(rowHeights, 0, maxN, plainText, i === 0 ? COL1_WIDTH_CHARS : COL2_WIDTH_CHARS);
       for (let r = 0; r < maxN; r++) {
         const bc = ws.getCell(currentRow + r, i + 1);
         applyBorder(bc);
@@ -4865,18 +4923,23 @@ async function buildExcelWorkbook(records, mappings) {
           const span = isLast ? maxN - i : 1;
           const color = p.choice ? CHOICE_COLORS[p.choice] : null;
           const cell = ws.getCell(rowIdx, colCursor);
-          cell.value = p.label;
+          cell.value = p.text;
           cell.alignment = { vertical: "top", wrapText: true };
           if (color) {
             cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: hexToArgb(color.bg) } };
             cell.font = { color: { argb: hexToArgb(color.text) } };
           }
           if (span > 1) ws.mergeCells(rowIdx, colCursor, rowIdx + span - 1, colCursor);
+          contributeRowHeight(rowHeights, i, span, p.text, DAY_WIDTH_CHARS);
         });
         for (let r = 0; r < maxN; r++) applyBorder(ws.getCell(currentRow + r, colCursor));
         colCursor++;
       });
     });
+
+    // Applique les hauteurs de sous-lignes calculées automatiquement à
+    // partir du texte le plus exigeant de chaque sous-ligne.
+    for (let r = 0; r < maxN; r++) ws.getRow(currentRow + r).height = rowHeights[r];
 
     currentRow += maxN;
   });
